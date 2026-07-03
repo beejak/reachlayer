@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic, hand-written Fortify FVDL fixture for Reachlayer's connector tests.
+
+  This is NOT a real Fortify sample export - no vendor data is redistributed here (see
+  PLAN.md §9 risk 6). It covers the subset of the FVDL schema that connectors/fortify's
+  FvdlParser reads: Vulnerabilities/Vulnerability/{ClassInfo,InstanceInfo,AnalysisInfo}
+  and a top-level Description block keyed by classID.
+-->
+<FVDL xmlns="xmlns://www.fortify.com/schema/fvdl" version="1.0">
+  <Vulnerabilities>
+    <Vulnerability>
+      <ClassInfo>
+        <ClassID>SQLI-0001-CLASS</ClassID>
+        <Kingdom>Input Validation and Representation</Kingdom>
+        <Type>SQL Injection</Type>
+        <Subtype>Poor Style</Subtype>
+        <AnalyzerName>dataflow</AnalyzerName>
+        <DefaultSeverity>4.0</DefaultSeverity>
+        <CWE>89</CWE>
+      </ClassInfo>
+      <InstanceInfo>
+        <InstanceID>SQLI-0001-INSTANCE</InstanceID>
+        <InstanceSeverity>4.0</InstanceSeverity>
+        <Confidence>5.0</Confidence>
+      </InstanceInfo>
+      <AnalysisInfo>
+        <Unified>
+          <Trace>
+            <Primary>
+              <Entry>
+                <Node>
+                  <SourceLocation path="src/main/java/dev/reachlayer/fixtures/vulnapp/UserController.java"
+                                  line="42" lineEnd="42" colStart="8" colEnd="45"
+                                  snippet="statement.executeQuery(sql)" />
+                </Node>
+              </Entry>
+            </Primary>
+          </Trace>
+        </Unified>
+      </AnalysisInfo>
+    </Vulnerability>
+    <Vulnerability>
+      <ClassInfo>
+        <ClassID>PATHTR-0002-CLASS</ClassID>
+        <Kingdom>Input Validation and Representation</Kingdom>
+        <Type>Path Manipulation</Type>
+        <Subtype></Subtype>
+        <AnalyzerName>dataflow</AnalyzerName>
+        <DefaultSeverity>3.0</DefaultSeverity>
+        <CWE>22</CWE>
+      </ClassInfo>
+      <InstanceInfo>
+        <InstanceID>PATHTR-0002-INSTANCE</InstanceID>
+        <InstanceSeverity>3.0</InstanceSeverity>
+        <Confidence>4.0</Confidence>
+      </InstanceInfo>
+      <AnalysisInfo>
+        <Unified>
+          <Trace>
+            <Primary>
+              <Entry>
+                <Node>
+                  <SourceLocation path="src/main/java/dev/reachlayer/fixtures/vulnapp/internal/ReportExporter.java"
+                                  line="17" lineEnd="17" colStart="4" colEnd="30"
+                                  snippet="new FileInputStream(userSuppliedPath)" />
+                </Node>
+              </Entry>
+            </Primary>
+          </Trace>
+        </Unified>
+      </AnalysisInfo>
+    </Vulnerability>
+  </Vulnerabilities>
+  <Description classID="SQLI-0001-CLASS">
+    <Abstract>Untrusted input is concatenated into a SQL statement, enabling SQL Injection.</Abstract>
+    <Explanation>An attacker who controls part of a SQL query text can alter its meaning to read, modify or delete data outside the intended scope.</Explanation>
+  </Description>
+  <Description classID="PATHTR-0002-CLASS">
+    <Abstract>Untrusted input is used to construct a file path, enabling Path Manipulation.</Abstract>
+    <Explanation>An attacker who controls part of a filesystem path can escape the intended directory and read or write arbitrary files.</Explanation>
+  </Description>
+</FVDL>

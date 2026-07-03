@@ -1,0 +1,24 @@
+# Example Reachlayer configuration. Every field is optional - anything omitted (or this whole
+# file being absent) falls back to the documented defaults in docs/scoring.md. See PLAN.md §8.
+
+scoring:
+  cvssWeight: 0.5
+  exploitWeight: 0.5
+  reachableMultiplier: 1.0
+  unreachableMultiplier: 0.4
+  unknownMultiplier: 0.7
+  internetFacingWeight: 0.15
+  touchesAuthWeight: 0.1
+  touchesPiiWeight: 0.1
+  touchesSecretsWeight: 0.1
+  blastRadiusCap: 1.5
+
+advisor:
+  # "noop" (templated, no API key needed) or "anthropic" (requires ANTHROPIC_API_KEY)
+  provider: noop
+  # Only the top-N ranked findings get a real LLM call; the rest use the templated fallback.
+  topNForLlm: 5
+
+output:
+  topN: 5
+  commentMarker: "<!-- reachlayer:report -->"

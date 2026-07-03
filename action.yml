@@ -1,0 +1,51 @@
+name: "Reachlayer"
+description: >-
+  Non-blocking risk-triage layer on top of Fortify (SAST) and Black Duck (SCA): adds static
+  reachability, EPSS/KEV exploitability, and blast-radius context, then posts a single ranked
+  PR comment. Never fails the build.
+author: "Reachlayer contributors"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  fortify-fvdl:
+    description: "Path to a Fortify audit.fvdl or .fpr export. Optional."
+    required: false
+    default: ""
+  blackduck-bdio:
+    description: "Path to a Black Duck JSON/BDIO export. Optional."
+    required: false
+    default: ""
+  repo-path:
+    description: "Path to the checked-out repository (used for code-snippet retrieval)."
+    required: false
+    default: "."
+  classes-dir:
+    description: "Path to compiled application .class files, used for reachability analysis. If omitted, reachability tags everything 'unknown'."
+    required: false
+    default: ""
+  config:
+    description: "Path to a reachlayer.yml config file. Optional; defaults are used if omitted."
+    required: false
+    default: ""
+  post-pr-comment:
+    description: "Whether to upsert a PR comment via the GitHub REST API. Requires GITHUB_TOKEN."
+    required: false
+    default: "true"
+
+outputs:
+  report-path:
+    description: "Path to the rendered Markdown report inside the action's workspace."
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  args:
+    - "--fortify=${{ inputs.fortify-fvdl }}"
+    - "--blackduck=${{ inputs.blackduck-bdio }}"
+    - "--repo=${{ inputs.repo-path }}"
+    - "--classes=${{ inputs.classes-dir }}"
+    - "--config=${{ inputs.config }}"
+    - "--post-pr-comment=${{ inputs.post-pr-comment }}"
+    - "--out=/github/workspace/reachlayer-report.md"
