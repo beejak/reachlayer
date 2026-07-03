@@ -159,6 +159,27 @@ class EpssClientTest {
     }
 
     @Test
+    void unknownTopLevelFieldInApiResponseIsIgnored() {
+        String responseWithExtraField =
+                """
+                {
+                  "status": "OK",
+                  "status-code": 200,
+                  "data": [
+                    { "cve": "CVE-2021-44228", "epss": "0.974730000", "percentile": "0.999720000", "date": "2024-01-01" }
+                  ]
+                }
+                """;
+        HttpFetcher fetcher = uri -> responseWithExtraField;
+        EpssClient client = new EpssClient(fetcher, tempDir, () -> LocalDate.of(2024, 6, 1));
+
+        Map<String, Epss> result = client.lookup(List.of("CVE-2021-44228"));
+
+        assertThat(result).containsKey("CVE-2021-44228");
+        assertThat(result.get("CVE-2021-44228").score()).isEqualTo(0.97473);
+    }
+
+    @Test
     void jdkHttpFetcherRejectsUnreachableHost() {
         JdkHttpFetcher fetcher = new JdkHttpFetcher();
         URI uri = URI.create("http://localhost:1/definitely-not-listening");

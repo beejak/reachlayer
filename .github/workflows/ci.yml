@@ -16,6 +16,11 @@ jobs:
           java-version: "21"
       - name: Build and test
         run: ./gradlew build --no-daemon
+      - name: Regenerate eval scoreboard
+        continue-on-error: true
+        run: |
+          ./gradlew :evals:runEvals --no-daemon
+          cat evals/scoreboard.md >> "$GITHUB_STEP_SUMMARY"
 
   # Self-dogfooding: runs Reachlayer's own CLI against its synthetic fixtures and uploads the
   # resulting SARIF file through GitHub's real code-scanning ingestion (github/codeql-action/
