@@ -113,7 +113,8 @@ public final class EvalRunner {
             try {
                 entry.getValue().run(List.of(ScanSource.ofPath(Path.of("test/repo"))), "test/repo");
             } catch (RuntimeException e) {
-                failures.add(entry.getKey() + " -> " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                failures.add(entry.getKey() + " -> " + e.getClass().getSimpleName() + ": "
+                        + (e.getMessage() != null ? e.getMessage() : "(no message)"));
             }
         }
         return new NeverFailResult(scenarios.size(), failures);
