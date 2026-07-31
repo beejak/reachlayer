@@ -21,7 +21,7 @@ file for the full rationale.
 
 | Module | Package | Responsibility |
 |---|---|---|
-| `core` | `dev.reachlayer.core` | `Finding`/`Location`/`BlastRadius`/`FixSuggestion`/`Cvss`/`RankedReport` model, the 4 SPIs, `reachlayer.yml` config loading, `Orchestrator`. |
+| `core` | `dev.reachlayer.core` | `Finding`/`Location`/`BlastRadius`/`FixSuggestion`/`Cvss`/`RankedReport` model, the 4 SPIs, `reachlayer.yml` config loading, `Orchestrator`, baseline/diff mode (`core.baseline`, see `docs/baseline-mode.md`). |
 | `connectors:api`, `:fortify`, `:blackduck` | `dev.reachlayer.connectors.*` | `ScannerConnector` implementations: streaming FVDL/FPR XML parser (Woodstox/StAX), Black Duck JSON parser (Jackson). |
 | `reachability` | `dev.reachlayer.reach` | SootUp-based CHA call-graph construction from Spring/servlet entry points; `SignatureSource` for vulnerable-method/component lookups; `ReachabilityTagger`. |
 | `enrich:epss`, `:kev`, `:blastradius` | `dev.reachlayer.enrich.*` | Disk-cached EPSS/KEV clients; heuristic blast-radius analyzer. |
@@ -49,15 +49,19 @@ Fortify FVDL/FPR + Black Duck BDIO/JSON
         │  AdvisorStage: fix suggestion (LLM for top-N, templated otherwise)
         ▼
    Finding[] + fixSuggestion
+        │  BaselineStage (optional): tag isNew relative to --baseline-in, if provided
+        ▼
+   Finding[] + isNew (or unchanged, if no baseline)
         │  OutputRenderer(s): Markdown → single upserted PR comment
         ▼
    Pull request comment (never a failing check)
 ```
 
 `core.pipeline.Orchestrator` wires this via constructor injection (`ScannerConnector` list,
-`ReachabilityStage`, `EnrichmentStage`, `ScoringStage`, `AdvisorStage` functional interfaces,
-`OutputRenderer` list, `ReachlayerConfig`). No DI framework is used — `cmd`'s `Main` composes the
-concrete implementations from every module and binds them via method references.
+`ReachabilityStage`, `EnrichmentStage`, `ScoringStage`, `AdvisorStage`, an optional
+`BaselineStage`, functional interfaces all, plus an `OutputRenderer` list and `ReachlayerConfig`).
+No DI framework is used — `cmd`'s `Main` composes the concrete implementations from every module
+and binds them via method references.
 
 Every stage failure (a bad connector, a broken renderer, an unreachable EPSS API) is caught and
 logged inside the `Orchestrator`/individual clients — the pipeline degrades, it does not abort.

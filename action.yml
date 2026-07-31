@@ -40,12 +40,28 @@ inputs:
       SARIF output entirely.
     required: false
     default: ""
+  baseline-in:
+    description: >-
+      Optional path to a baseline JSON file (finding ids from a prior run — typically a scheduled
+      scan of the base branch) to diff against. When set, the rendered report foregrounds only
+      findings introduced since the baseline; pre-existing findings are still fully listed, just
+      collapsed. Blank means no baseline is used (today's behavior).
+    required: false
+    default: ""
+  baseline-out:
+    description: >-
+      Optional path to write THIS run's finding ids as a baseline JSON file, for a later run (e.g.
+      a PR run) to diff against via baseline-in. Blank skips writing a baseline file entirely.
+    required: false
+    default: ""
 
 outputs:
   report-path:
     description: "Path to the rendered Markdown report inside the action's workspace."
   sarif-path:
     description: "Path to the rendered SARIF report inside the action's workspace, when sarif-out is set."
+  baseline-out-path:
+    description: "Path to the written baseline JSON file inside the action's workspace, when baseline-out is set."
 
 runs:
   using: "docker"
@@ -59,3 +75,5 @@ runs:
     - "--post-pr-comment=${{ inputs.post-pr-comment }}"
     - "--out=/github/workspace/reachlayer-report.md"
     - "--sarif-out=${{ inputs.sarif-out }}"
+    - "--baseline-in=${{ inputs.baseline-in }}"
+    - "--baseline-out=${{ inputs.baseline-out }}"

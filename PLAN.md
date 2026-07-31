@@ -155,7 +155,10 @@ Java/Spring, GitHub Actions, Fortify + Black Duck (offline exports), call-graph 
 - **SARIF output renderer** (GitHub code-scanning annotations, still non-blocking) — implemented:
   `output/sarif`'s `SarifOutputRenderer`, wired via `cmd`'s `--sarif-out` flag / `action.yml`'s
   `sarif-out` input. See `docs/sarif-output.md`.
-- **Baseline/diff mode:** only surface *new* findings introduced by the PR vs. the base branch, to fight backlog noise.
+- **Baseline/diff mode** (only surface *new* findings introduced by the PR vs. the base branch, to
+  fight backlog noise) — implemented: `core.baseline`'s `BaselineStore`/`BaselineDiffer` plus
+  `Finding#isNew()`, wired via `cmd`'s `--baseline-in`/`--baseline-out` flags and `action.yml`'s
+  matching inputs. See `docs/baseline-mode.md`.
 - **Incremental call-graph construction** (IncCHA-style graph patching) for CI speed on large codebases.
 - Config file (`reachlayer.yml`): scoring weights, entry-point overrides, LLM provider, suppression-of-*display* rules (never suppression of data).
 
