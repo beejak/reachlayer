@@ -11,6 +11,8 @@ import dev.reachlayer.core.baseline.BaselineDiffer;
 import dev.reachlayer.core.baseline.BaselineStore;
 import dev.reachlayer.core.config.ConfigLoader;
 import dev.reachlayer.core.config.ReachlayerConfig;
+import dev.reachlayer.core.metrics.MetricsWriter;
+import dev.reachlayer.core.metrics.PipelineMetrics;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.RankedReport;
 import dev.reachlayer.core.pipeline.AdvisorStage;
@@ -105,6 +107,13 @@ public final class Main implements Callable<Integer> {
     private String cacheDir;
 
     @Option(
+            names = "--metrics-out",
+            defaultValue = "",
+            description = "Path to also write pipeline observability metrics (stage timing, finding counts, "
+                    + "renderer outcomes) as JSON. Blank = skip; no file is written.")
+    private String metricsOut;
+
+    @Option(
             names = "--post-pr-comment",
             defaultValue = "true",
             arity = "1",
@@ -166,6 +175,7 @@ public final class Main implements Callable<Integer> {
                 cfg);
         RankedReport report = orchestrator.run(sources, repoLabel);
         writeBaselineIfRequested(report, baselineOut);
+        writeMetricsIfRequested(orchestrator.metrics(), metricsOut);
     }
 
     static ReachabilityStage buildReachabilityStage(String classesDir) {
@@ -208,6 +218,19 @@ public final class Main implements Callable<Integer> {
             ids.add(f.id());
         }
         BaselineStore.write(Path.of(baselineOutPath), ids, Instant.now());
+    }
+
+    /**
+     * Writes {@code metrics} as JSON to {@code metricsOutPath}, for CI observability (stage
+     * timing, finding counts, renderer outcomes). No-op if {@code metricsOutPath} is blank or
+     * {@code metrics} is {@code null} (e.g. the orchestrator never ran). Never throws — see {@link
+     * MetricsWriter#write}.
+     */
+    static void writeMetricsIfRequested(PipelineMetrics metrics, String metricsOutPath) {
+        if (metrics == null || metricsOutPath == null || metricsOutPath.isBlank()) {
+            return;
+        }
+        MetricsWriter.write(Path.of(metricsOutPath), metrics);
     }
 
     static EnrichmentStage buildEnrichmentStage(

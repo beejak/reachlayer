@@ -219,6 +219,45 @@ class MainWiringIT {
         assertThat(secondReport.findings()).allSatisfy(f -> assertThat(f.isNew()).isFalse()); // identical corpus -> nothing new
     }
 
+    @Test
+    void writeMetricsIfRequestedSkipsWhenPathBlank(@TempDir Path tempDir) {
+        Main.writeMetricsIfRequested(null, "");
+
+        assertThat(tempDir.toFile().listFiles()).isEmpty();
+    }
+
+    @Test
+    void writeMetricsIfRequestedWritesFileWhenPathProvidedAndMetricsNonNull(@TempDir Path tempDir) throws Exception {
+        Path metricsFile = tempDir.resolve("metrics.json");
+        Path fortifyExport = repoRoot().resolve("fixtures/sample-fpr/audit.fvdl");
+        Path blackduckExport = repoRoot().resolve("fixtures/sample-bdio/scan.json");
+        List<ScanSource> sources =
+                List.of(ScanSource.ofPath(fortifyExport), ScanSource.ofPath(blackduckExport));
+        List<ScannerConnector> connectors = List.of(new FortifyConnector(), new BlackDuckConnector());
+        ScoringStage scoringStage = findings -> new RiskScorer().score(findings, ReachlayerConfig.defaults().scoring());
+        AdvisorStage advisorStage = new FixAdvisorService(
+                Main.buildProvider("noop"), ReachlayerConfig.defaults().advisor(), new ContextBuilder(), repoRoot());
+
+        Orchestrator orchestrator = new Orchestrator(
+                connectors,
+                Main.buildReachabilityStage(""),
+                Main.buildEnrichmentStage(
+                        uri -> "{\"status\":\"OK\",\"data\":[]}",
+                        uri -> "{\"vulnerabilities\":[]}",
+                        tempDir.resolve("cache")),
+                scoringStage,
+                advisorStage,
+                Main.buildOutputRenderers(null, false, null),
+                ReachlayerConfig.defaults());
+        orchestrator.run(sources, "reachlayer/reachlayer");
+
+        Main.writeMetricsIfRequested(orchestrator.metrics(), metricsFile.toString());
+
+        assertThat(metricsFile).exists();
+        String raw = Files.readString(metricsFile);
+        assertThat(raw).contains("\"findingsIngested\" : 5");
+    }
+
     private RankedReport runAgainstFixtures(Path tempDir, String baselineInPath, String baselineOutPath)
             throws IOException {
         Path fortifyExport = repoRoot().resolve("fixtures/sample-fpr/audit.fvdl");
