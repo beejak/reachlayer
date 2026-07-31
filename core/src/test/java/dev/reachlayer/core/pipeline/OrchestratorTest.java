@@ -153,4 +153,73 @@ class OrchestratorTest {
         RankedReport report = orchestrator.run(List.of(ScanSource.ofPath(Path.of("dummy"))), "acme/repo");
         assertThat(report.findings()).hasSize(1);
     }
+
+    @Test
+    void baselineStageTagsFindingsWhenProvidedViaEightArgConstructor() {
+        ScannerConnector connector = new ScannerConnector() {
+            @Override
+            public String sourceName() {
+                return "fake";
+            }
+
+            @Override
+            public boolean supports(ScanSource source) {
+                return true;
+            }
+
+            @Override
+            public List<Finding> ingest(ScanSource source) {
+                return List.of(Finding.builder().id("f1").source("fake").kind(FindingKind.SAST).build());
+            }
+        };
+        BaselineStage baselineStage =
+                findings -> findings.stream().map(f -> f.toBuilder().isNew(true).build()).toList();
+
+        Orchestrator orchestrator = new Orchestrator(
+                List.of(connector),
+                findings -> findings,
+                findings -> findings,
+                findings -> findings,
+                findings -> findings,
+                baselineStage,
+                List.of(),
+                ReachlayerConfig.defaults());
+
+        RankedReport report = orchestrator.run(List.of(ScanSource.ofPath(Path.of("dummy"))), "acme/repo");
+
+        assertThat(report.findings()).allMatch(f -> Boolean.TRUE.equals(f.isNew()));
+    }
+
+    @Test
+    void sevenArgConstructorLeavesIsNewNullEverywhere() {
+        ScannerConnector connector = new ScannerConnector() {
+            @Override
+            public String sourceName() {
+                return "fake";
+            }
+
+            @Override
+            public boolean supports(ScanSource source) {
+                return true;
+            }
+
+            @Override
+            public List<Finding> ingest(ScanSource source) {
+                return List.of(Finding.builder().id("f1").source("fake").kind(FindingKind.SAST).build());
+            }
+        };
+
+        Orchestrator orchestrator = new Orchestrator(
+                List.of(connector),
+                findings -> findings,
+                findings -> findings,
+                findings -> findings,
+                findings -> findings,
+                List.of(),
+                ReachlayerConfig.defaults());
+
+        RankedReport report = orchestrator.run(List.of(ScanSource.ofPath(Path.of("dummy"))), "acme/repo");
+
+        assertThat(report.findings()).allMatch(f -> f.isNew() == null);
+    }
 }

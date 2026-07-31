@@ -57,4 +57,14 @@ class FindingTest {
         assertThat(id1).isEqualTo(id2);
         assertThat(id1).startsWith("fortify-");
     }
+
+    @Test
+    void isNewDefaultsToNullAndRoundTripsThroughBuilderAndToBuilder() {
+        Finding ingested = Finding.builder().id("f1").source("fortify").kind(FindingKind.SAST).build();
+        assertThat(ingested.isNew()).isNull();
+
+        Finding tagged = ingested.toBuilder().isNew(true).build();
+        assertThat(tagged.isNew()).isTrue();
+        assertThat(ingested.isNew()).isNull(); // original untouched, same as every other enrichment field
+    }
 }

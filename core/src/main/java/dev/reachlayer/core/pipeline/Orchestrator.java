@@ -35,6 +35,7 @@ public final class Orchestrator {
     private final EnrichmentStage enrichmentStage;
     private final ScoringStage scoringStage;
     private final AdvisorStage advisorStage;
+    private final BaselineStage baselineStage;
     private final List<OutputRenderer> outputRenderers;
     private final ReachlayerConfig config;
 
@@ -46,11 +47,31 @@ public final class Orchestrator {
             AdvisorStage advisorStage,
             List<OutputRenderer> outputRenderers,
             ReachlayerConfig config) {
+        this(connectors, reachabilityStage, enrichmentStage, scoringStage, advisorStage, null, outputRenderers, config);
+    }
+
+    /**
+     * Overload accepting a {@link BaselineStage} (PLAN.md §5 Phase 1, "baseline/diff mode"). {@code
+     * baselineStage} may be {@code null} — treated identically to the 7-arg constructor above (no
+     * tagging occurs; every finding's {@code isNew()} stays {@code null}) — so this overload is
+     * purely additive: every existing call site using the 7-arg constructor keeps compiling and
+     * behaving exactly as before.
+     */
+    public Orchestrator(
+            List<ScannerConnector> connectors,
+            ReachabilityStage reachabilityStage,
+            EnrichmentStage enrichmentStage,
+            ScoringStage scoringStage,
+            AdvisorStage advisorStage,
+            BaselineStage baselineStage,
+            List<OutputRenderer> outputRenderers,
+            ReachlayerConfig config) {
         this.connectors = List.copyOf(connectors);
         this.reachabilityStage = reachabilityStage;
         this.enrichmentStage = enrichmentStage;
         this.scoringStage = scoringStage;
         this.advisorStage = advisorStage;
+        this.baselineStage = baselineStage == null ? findings -> findings : baselineStage;
         this.outputRenderers = List.copyOf(outputRenderers);
         this.config = config;
     }
@@ -68,6 +89,9 @@ public final class Orchestrator {
         findings = safeStage("scoring", () -> scoringStage.score(afterScoring), findings);
         List<Finding> afterAdvisor = findings;
         findings = safeStage("advisor", () -> advisorStage.advise(afterAdvisor), findings);
+
+        List<Finding> afterBaseline = findings;
+        findings = safeStage("baseline", () -> baselineStage.tag(afterBaseline), findings);
 
         RankedReport report = RankedReport.of(findings, repoLabel, config.output().topN());
         renderAll(report);
