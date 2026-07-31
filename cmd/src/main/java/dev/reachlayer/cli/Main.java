@@ -6,9 +6,15 @@ import dev.reachlayer.advisor.providers.anthropic.AnthropicLlmProvider;
 import dev.reachlayer.advisor.providers.noop.NoopLlmProvider;
 import dev.reachlayer.connectors.blackduck.BlackDuckConnector;
 import dev.reachlayer.connectors.fortify.FortifyConnector;
+import dev.reachlayer.core.baseline.Baseline;
+import dev.reachlayer.core.baseline.BaselineDiffer;
+import dev.reachlayer.core.baseline.BaselineStore;
 import dev.reachlayer.core.config.ConfigLoader;
 import dev.reachlayer.core.config.ReachlayerConfig;
+import dev.reachlayer.core.model.Finding;
+import dev.reachlayer.core.model.RankedReport;
 import dev.reachlayer.core.pipeline.AdvisorStage;
+import dev.reachlayer.core.pipeline.BaselineStage;
 import dev.reachlayer.core.pipeline.EnrichmentStage;
 import dev.reachlayer.core.pipeline.Orchestrator;
 import dev.reachlayer.core.pipeline.ReachabilityStage;
@@ -29,8 +35,11 @@ import dev.reachlayer.reach.signatures.ComponentLevelSignatureSource;
 import dev.reachlayer.scoring.RiskScorer;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +83,23 @@ public final class Main implements Callable<Integer> {
             defaultValue = "",
             description = "Path to also write a SARIF 2.1.0 report to (for GitHub code scanning upload).")
     private String sarifOut;
+
+    @Option(
+            names = "--baseline-in",
+            defaultValue = "",
+            description =
+                    "Path to a baseline JSON file (finding ids from a prior run, e.g. a base-branch scan) to diff"
+                            + " against. Blank = no baseline; every finding's isNew stays unset, identical to"
+                            + " today's behavior.")
+    private String baselineIn;
+
+    @Option(
+            names = "--baseline-out",
+            defaultValue = "",
+            description =
+                    "Path to write the CURRENT run's finding ids as a baseline JSON file, for a future run (e.g."
+                            + " a PR run) to diff against. Blank = skip; no file is written.")
+    private String baselineOut;
 
     @Option(names = "--cache-dir", defaultValue = ".reachlayer-cache", description = "EPSS/KEV disk cache directory.")
     private String cacheDir;
@@ -126,11 +152,20 @@ public final class Main implements Callable<Integer> {
                 postPrComment,
                 sarifOut.isBlank() ? null : Path.of(sarifOut));
 
+        BaselineStage baselineStage = buildBaselineStage(baselineIn);
         String repoLabel = firstNonBlank(System.getenv("GITHUB_REPOSITORY"), repo);
 
         Orchestrator orchestrator = new Orchestrator(
-                connectors, reachabilityStage, enrichmentStage, scoringStage, advisorStage, outputRenderers, cfg);
-        orchestrator.run(sources, repoLabel);
+                connectors,
+                reachabilityStage,
+                enrichmentStage,
+                scoringStage,
+                advisorStage,
+                baselineStage,
+                outputRenderers,
+                cfg);
+        RankedReport report = orchestrator.run(sources, repoLabel);
+        writeBaselineIfRequested(report, baselineOut);
     }
 
     static ReachabilityStage buildReachabilityStage(String classesDir) {
@@ -138,6 +173,41 @@ public final class Main implements Callable<Integer> {
             return findings -> findings;
         }
         return new ReachabilityTagger(Path.of(classesDir), List.of(new ComponentLevelSignatureSource()));
+    }
+
+    /**
+     * Builds the {@link BaselineStage} for this run: identity (no tagging) if {@code
+     * baselineInPath} is blank; otherwise reads the baseline file and tags findings against it.
+     * Degrades gracefully all the way through — a missing/corrupt baseline file makes {@link
+     * BaselineStore#read} return {@code null}, which makes {@link BaselineDiffer#tag} the
+     * identity function, exactly as if {@code --baseline-in} had never been supplied. Never
+     * throws.
+     */
+    static BaselineStage buildBaselineStage(String baselineInPath) {
+        if (baselineInPath == null || baselineInPath.isBlank()) {
+            return findings -> findings;
+        }
+        Baseline baseline = BaselineStore.read(Path.of(baselineInPath));
+        Set<String> baselineIds = baseline == null ? null : baseline.findingIds();
+        return findings -> BaselineDiffer.tag(findings, baselineIds);
+    }
+
+    /**
+     * Writes the current run's finding ids as a baseline file at {@code baselineOutPath}, for a
+     * future run to diff against — a plain post-run side effect, not an {@link
+     * dev.reachlayer.core.spi.OutputRenderer} (nobody renders a baseline file for a human; its
+     * only consumer is a future invocation's {@code --baseline-in}). No-op if {@code
+     * baselineOutPath} is blank. Never throws — see {@link BaselineStore#write}.
+     */
+    static void writeBaselineIfRequested(RankedReport report, String baselineOutPath) {
+        if (baselineOutPath == null || baselineOutPath.isBlank()) {
+            return;
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (Finding f : report.findings()) {
+            ids.add(f.id());
+        }
+        BaselineStore.write(Path.of(baselineOutPath), ids, Instant.now());
     }
 
     static EnrichmentStage buildEnrichmentStage(
