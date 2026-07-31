@@ -21,7 +21,7 @@ file for the full rationale.
 
 | Module | Package | Responsibility |
 |---|---|---|
-| `core` | `dev.reachlayer.core` | `Finding`/`Location`/`BlastRadius`/`FixSuggestion`/`Cvss`/`RankedReport` model, the 4 SPIs, `reachlayer.yml` config loading, `Orchestrator`, baseline/diff mode (`core.baseline`, see `docs/baseline-mode.md`). |
+| `core` | `dev.reachlayer.core` | `Finding`/`Location`/`BlastRadius`/`FixSuggestion`/`Cvss`/`RankedReport` model, the 4 SPIs, `reachlayer.yml` config loading, `Orchestrator`, baseline/diff mode (`core.baseline`, see `docs/baseline-mode.md`), pipeline observability (`core.metrics`, see `docs/observability.md`). |
 | `connectors:api`, `:fortify`, `:blackduck` | `dev.reachlayer.connectors.*` | `ScannerConnector` implementations: streaming FVDL/FPR XML parser (Woodstox/StAX), Black Duck JSON parser (Jackson). |
 | `reachability` | `dev.reachlayer.reach` | SootUp-based CHA call-graph construction from Spring/servlet entry points; `SignatureSource` for vulnerable-method/component lookups; `ReachabilityTagger`. |
 | `enrich:epss`, `:kev`, `:blastradius` | `dev.reachlayer.enrich.*` | Disk-cached EPSS/KEV clients; heuristic blast-radius analyzer. |

@@ -54,6 +54,13 @@ inputs:
       a PR run) to diff against via baseline-in. Blank skips writing a baseline file entirely.
     required: false
     default: ""
+  metrics-out:
+    description: >-
+      Optional path to also write pipeline observability metrics (per-stage timing, finding
+      counts, output-renderer outcomes) as JSON inside the action's workspace. Blank skips writing
+      a metrics file entirely.
+    required: false
+    default: ""
 
 outputs:
   report-path:
@@ -62,6 +69,8 @@ outputs:
     description: "Path to the rendered SARIF report inside the action's workspace, when sarif-out is set."
   baseline-out-path:
     description: "Path to the written baseline JSON file inside the action's workspace, when baseline-out is set."
+  metrics-out-path:
+    description: "Path to the written pipeline metrics JSON file inside the action's workspace, when metrics-out is set."
 
 runs:
   using: "docker"
@@ -77,3 +86,4 @@ runs:
     - "--sarif-out=${{ inputs.sarif-out }}"
     - "--baseline-in=${{ inputs.baseline-in }}"
     - "--baseline-out=${{ inputs.baseline-out }}"
+    - "--metrics-out=${{ inputs.metrics-out }}"
