@@ -1,6 +1,7 @@
 package dev.reachlayer.core.pipeline;
 
 import dev.reachlayer.core.config.ReachlayerConfig;
+import dev.reachlayer.core.metrics.PipelineMetrics;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.RankedReport;
 import dev.reachlayer.core.spi.ConnectorException;
@@ -8,8 +9,12 @@ import dev.reachlayer.core.spi.OutputException;
 import dev.reachlayer.core.spi.OutputRenderer;
 import dev.reachlayer.core.spi.ScanSource;
 import dev.reachlayer.core.spi.ScannerConnector;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +43,8 @@ public final class Orchestrator {
     private final BaselineStage baselineStage;
     private final List<OutputRenderer> outputRenderers;
     private final ReachlayerConfig config;
+
+    private volatile PipelineMetrics metrics;
 
     public Orchestrator(
             List<ScannerConnector> connectors,
@@ -78,24 +85,66 @@ public final class Orchestrator {
 
     /** Ingests every source, runs the pipeline, renders the report, and returns it. */
     public RankedReport run(List<ScanSource> sources, String repoLabel) {
+        Instant startedAt = Instant.now();
+        long runStartNanos = System.nanoTime();
+        Map<String, Long> stageDurationMs = new LinkedHashMap<>();
+        Map<String, String> stageErrors = new LinkedHashMap<>();
+
         List<Finding> findings = ingest(sources);
-        log.info("Ingested {} findings from {} source(s)", findings.size(), sources.size());
+        int findingsIngested = findings.size();
+        log.info("Ingested {} findings from {} source(s)", findingsIngested, sources.size());
 
         List<Finding> afterReachability = findings;
-        findings = safeStage("reachability", () -> reachabilityStage.tag(afterReachability), findings);
+        findings = timedStage(
+                "reachability", () -> reachabilityStage.tag(afterReachability), findings, stageDurationMs, stageErrors);
         List<Finding> afterEnrichment = findings;
-        findings = safeStage("enrichment", () -> enrichmentStage.enrich(afterEnrichment), findings);
+        findings = timedStage(
+                "enrichment", () -> enrichmentStage.enrich(afterEnrichment), findings, stageDurationMs, stageErrors);
         List<Finding> afterScoring = findings;
-        findings = safeStage("scoring", () -> scoringStage.score(afterScoring), findings);
+        findings = timedStage(
+                "scoring", () -> scoringStage.score(afterScoring), findings, stageDurationMs, stageErrors);
         List<Finding> afterAdvisor = findings;
-        findings = safeStage("advisor", () -> advisorStage.advise(afterAdvisor), findings);
+        findings = timedStage(
+                "advisor", () -> advisorStage.advise(afterAdvisor), findings, stageDurationMs, stageErrors);
 
         List<Finding> afterBaseline = findings;
-        findings = safeStage("baseline", () -> baselineStage.tag(afterBaseline), findings);
+        findings = timedStage(
+                "baseline", () -> baselineStage.tag(afterBaseline), findings, stageDurationMs, stageErrors);
 
         RankedReport report = RankedReport.of(findings, repoLabel, config.output().topN());
-        renderAll(report);
+        RenderSummary renderSummary = renderAll(report);
+
+        long totalDurationMs = (System.nanoTime() - runStartNanos) / 1_000_000;
+        this.metrics = new PipelineMetrics(
+                startedAt,
+                Instant.now(),
+                totalDurationMs,
+                sources.size(),
+                findingsIngested,
+                stageDurationMs,
+                stageErrors,
+                countBy(findings, Finding::severity),
+                countBy(findings, Finding::source),
+                countBy(findings, f -> f.reachability() == null ? "unknown" : f.reachability().wireValue()),
+                renderSummary.succeeded(),
+                outputRenderers.size() - renderSummary.succeeded(),
+                renderSummary.errors());
+
         return report;
+    }
+
+    /** Metrics from the most recent {@link #run}; {@code null} until a run has completed. */
+    public PipelineMetrics metrics() {
+        return metrics;
+    }
+
+    private static Map<String, Integer> countBy(List<Finding> findings, java.util.function.Function<Finding, String> key) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Finding f : findings) {
+            String k = key.apply(f);
+            counts.merge(k == null ? "unknown" : k, 1, Integer::sum);
+        }
+        return counts;
     }
 
     private List<Finding> ingest(List<ScanSource> sources) {
@@ -131,22 +180,39 @@ public final class Orchestrator {
         return findings;
     }
 
-    private List<Finding> safeStage(String name, java.util.function.Supplier<List<Finding>> stage, List<Finding> fallback) {
+    private List<Finding> timedStage(
+            String name,
+            Supplier<List<Finding>> stage,
+            List<Finding> fallback,
+            Map<String, Long> stageDurationMs,
+            Map<String, String> stageErrors) {
+        long start = System.nanoTime();
         try {
             return stage.get();
         } catch (RuntimeException e) {
             log.warn("Pipeline stage '{}' failed, passing findings through unchanged: {}", name, e.getMessage(), e);
+            stageErrors.put(name, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             return fallback;
+        } finally {
+            stageDurationMs.put(name, (System.nanoTime() - start) / 1_000_000);
         }
     }
 
-    private void renderAll(RankedReport report) {
+    private RenderSummary renderAll(RankedReport report) {
+        int succeeded = 0;
+        Map<String, String> errors = new LinkedHashMap<>();
         for (OutputRenderer renderer : outputRenderers) {
             try {
                 renderer.render(report);
+                succeeded++;
             } catch (OutputException | RuntimeException e) {
                 log.warn("Output renderer '{}' failed: {}", renderer.name(), e.getMessage(), e);
+                errors.put(renderer.name(), e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             }
         }
+        return new RenderSummary(succeeded, errors);
+    }
+
+    private record RenderSummary(int succeeded, Map<String, String> errors) {
     }
 }
