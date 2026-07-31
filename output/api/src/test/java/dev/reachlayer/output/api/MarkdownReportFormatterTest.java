@@ -154,6 +154,99 @@ class MarkdownReportFormatterTest {
                 .build();
     }
 
+    private static Finding findingWithScoreAndIsNew(String id, double score, boolean isNew) {
+        return Finding.builder()
+                .id(id)
+                .source("fortify")
+                .kind(FindingKind.SAST)
+                .title(id)
+                .severity("Medium")
+                .riskScore(score)
+                .isNew(isNew)
+                .build();
+    }
+
+    @Test
+    void undiffedOutputContainsNoBaselineHeadingsWhenNoFindingHasIsNewSet() {
+        RankedReport report = RankedReport.of(List.of(fullyPopulatedFinding()), "acme/widgets", 5);
+
+        String markdown = formatter.format(report, MARKER);
+
+        assertThat(markdown).doesNotContain("New findings introduced by this change");
+        assertThat(markdown).doesNotContain("Pre-existing findings");
+    }
+
+    @Test
+    void baselineModeShowsNewFindingsInPrimaryTableAndCollapsesPreExisting() {
+        Finding newFinding = findingWithScoreAndIsNew("new-1", 90.0, true);
+        Finding existingFinding = findingWithScoreAndIsNew("existing-1", 95.0, false);
+
+        RankedReport report = RankedReport.of(List.of(newFinding, existingFinding), "acme/widgets", 5);
+
+        String markdown = formatter.format(report, MARKER);
+
+        assertThat(markdown).contains("2 findings analyzed against the baseline — 1 new, 1 pre-existing.");
+        assertThat(markdown).contains("### New findings introduced by this change");
+        assertThat(markdown).contains("### Pre-existing findings (unchanged from baseline)");
+
+        int newHeadingIndex = markdown.indexOf("### New findings introduced by this change");
+        int existingHeadingIndex = markdown.indexOf("### Pre-existing findings");
+        String newSection = markdown.substring(newHeadingIndex, existingHeadingIndex);
+        String existingSection = markdown.substring(existingHeadingIndex);
+
+        assertThat(newSection).contains("new-1");
+        assertThat(newSection).doesNotContain("existing-1");
+        assertThat(existingSection).contains("existing-1");
+        assertThat(existingSection).contains("Show 1 pre-existing finding</summary>");
+    }
+
+    @Test
+    void baselineModeWithNoNewFindingsShowsReassuringMessageAndStillListsExisting() {
+        Finding existingFinding = findingWithScoreAndIsNew("existing-1", 50.0, false);
+        RankedReport report = RankedReport.of(List.of(existingFinding), "acme/widgets", 5);
+
+        String markdown = formatter.format(report, MARKER);
+
+        assertThat(markdown)
+                .contains("_No new findings introduced by this change compared to the baseline._");
+        assertThat(markdown).contains("existing-1");
+    }
+
+    @Test
+    void baselineModeOmitsPreExistingSectionEntirelyWhenEverythingIsNew() {
+        Finding newFinding = findingWithScoreAndIsNew("new-1", 90.0, true);
+        RankedReport report = RankedReport.of(List.of(newFinding), "acme/widgets", 5);
+
+        String markdown = formatter.format(report, MARKER);
+
+        assertThat(markdown).doesNotContain("Pre-existing findings");
+    }
+
+    @Test
+    void baselineModeNewFindingsBeyondTopNAreCollapsedSeparatelyFromPreExisting() {
+        Finding new1 = findingWithScoreAndIsNew("new-1", 90.0, true);
+        Finding new2 = findingWithScoreAndIsNew("new-2", 80.0, true);
+        Finding existing1 = findingWithScoreAndIsNew("existing-1", 70.0, false);
+
+        RankedReport report = RankedReport.of(List.of(new1, new2, existing1), "acme/widgets", 1);
+
+        String markdown = formatter.format(report, MARKER);
+
+        int newHeadingIndex = markdown.indexOf("### New findings introduced by this change");
+        int detailsIndex = markdown.indexOf("<details>", newHeadingIndex);
+        int existingHeadingIndex = markdown.indexOf("### Pre-existing findings");
+
+        String primaryNewSection = markdown.substring(newHeadingIndex, detailsIndex);
+        assertThat(primaryNewSection).contains("new-1");
+        assertThat(primaryNewSection).doesNotContain("new-2");
+
+        String collapsedNewSection = markdown.substring(detailsIndex, existingHeadingIndex);
+        assertThat(collapsedNewSection).contains("new-2");
+        assertThat(collapsedNewSection).contains("Show all 2 new findings");
+
+        assertThat(markdown.substring(existingHeadingIndex)).contains("existing-1");
+    }
+
     private static Finding fullyPopulatedFinding() {
         return Finding.builder()
                 .id("full-1")
