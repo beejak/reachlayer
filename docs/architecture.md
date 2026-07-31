@@ -27,7 +27,7 @@ file for the full rationale.
 | `enrich:epss`, `:kev`, `:blastradius` | `dev.reachlayer.enrich.*` | Disk-cached EPSS/KEV clients; heuristic blast-radius analyzer. |
 | `scoring` | `dev.reachlayer.scoring` | Deterministic blended risk score + explanation (see `scoring.md`). |
 | `advisor:api`, `:providers:noop`, `:providers:anthropic` | `dev.reachlayer.advisor.*` | `LlmProvider` SPI; templated fallback (default) and an Anthropic-backed provider. |
-| `output:api`, `:github-pr` | `dev.reachlayer.output.*` | `OutputRenderer` SPI; Markdown formatting; single-comment GitHub PR upsert. |
+| `output:api`, `:github-pr`, `:sarif` | `dev.reachlayer.output.*` | `OutputRenderer` SPI; Markdown formatting; single-comment GitHub PR upsert; SARIF 2.1.0 report for GitHub code scanning (see `docs/sarif-output.md`). |
 | `cmd` | `dev.reachlayer.cli` | picocli `Main`, wires everything via `Orchestrator`, produces the fat JAR the Docker action runs. |
 
 ## Data flow (MVP, synchronous in CI)

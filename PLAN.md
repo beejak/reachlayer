@@ -152,7 +152,9 @@ Java/Spring, GitHub Actions, Fortify + Black Duck (offline exports), call-graph 
 ### Phase 1 — Harden & connect live
 - **Live API ingestion:** Fortify SSC REST (poll-until-complete with configurable interval) + Black Duck REST/Rapid Scan synchronous path.
 - **Event-driven intake service:** webhook receiver (Fortify SSC scan-complete / JMS, Black Duck) with **polling fallback**, so Reachlayer can run as a small always-on service, not only inside a CI step.
-- **SARIF output renderer** (GitHub code-scanning annotations, still non-blocking).
+- **SARIF output renderer** (GitHub code-scanning annotations, still non-blocking) — implemented:
+  `output/sarif`'s `SarifOutputRenderer`, wired via `cmd`'s `--sarif-out` flag / `action.yml`'s
+  `sarif-out` input. See `docs/sarif-output.md`.
 - **Baseline/diff mode:** only surface *new* findings introduced by the PR vs. the base branch, to fight backlog noise.
 - **Incremental call-graph construction** (IncCHA-style graph patching) for CI speed on large codebases.
 - Config file (`reachlayer.yml`): scoring weights, entry-point overrides, LLM provider, suppression-of-*display* rules (never suppression of data).

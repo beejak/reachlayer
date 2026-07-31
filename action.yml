@@ -33,10 +33,19 @@ inputs:
     description: "Whether to upsert a PR comment via the GitHub REST API. Requires GITHUB_TOKEN."
     required: false
     default: "true"
+  sarif-out:
+    description: >-
+      Optional path to also write a SARIF 2.1.0 report to inside the action's workspace (for a
+      later github/codeql-action/upload-sarif step in the consumer's own workflow). Blank skips
+      SARIF output entirely.
+    required: false
+    default: ""
 
 outputs:
   report-path:
     description: "Path to the rendered Markdown report inside the action's workspace."
+  sarif-path:
+    description: "Path to the rendered SARIF report inside the action's workspace, when sarif-out is set."
 
 runs:
   using: "docker"
@@ -49,3 +58,4 @@ runs:
     - "--config=${{ inputs.config }}"
     - "--post-pr-comment=${{ inputs.post-pr-comment }}"
     - "--out=/github/workspace/reachlayer-report.md"
+    - "--sarif-out=${{ inputs.sarif-out }}"
