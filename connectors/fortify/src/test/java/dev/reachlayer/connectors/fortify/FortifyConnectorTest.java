@@ -1,12 +1,15 @@
 package dev.reachlayer.connectors.fortify;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.FindingKind;
+import dev.reachlayer.core.spi.ConnectorException;
 import dev.reachlayer.core.spi.ScanSource;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -74,5 +77,80 @@ class FortifyConnectorTest {
 
         assertThat(findings).hasSize(2);
         assertThat(findings).allMatch(f -> f.source().equals("fortify"));
+    }
+
+    @Test
+    void throwsConnectorExceptionWhenFprHasNoAuditFvdlEntry() throws Exception {
+        Path fpr = tempDir.resolve("scan.fpr");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(fpr))) {
+            zos.putNextEntry(new ZipEntry("src-archive/README.txt"));
+            zos.write("no audit.fvdl in here".getBytes());
+            zos.closeEntry();
+        }
+
+        FortifyConnector connector = new FortifyConnector();
+
+        assertThatThrownBy(() -> connector.ingest(ScanSource.ofPath(fpr)))
+                .isInstanceOf(ConnectorException.class)
+                .hasMessageContaining("audit.fvdl");
+    }
+
+    @Test
+    void throwsConnectorExceptionOnMalformedXml() throws IOException {
+        Path fvdl = tempDir.resolve("audit.fvdl");
+        Files.write(fvdl, "<FVDL><Vulnerabilities><Vulnerability>".getBytes(StandardCharsets.UTF_8)); // truncated, unclosed
+
+        FortifyConnector connector = new FortifyConnector();
+
+        assertThatThrownBy(() -> connector.ingest(ScanSource.ofPath(fvdl)))
+                .isInstanceOf(ConnectorException.class)
+                .hasMessageContaining("Failed to parse Fortify export");
+    }
+
+    @Test
+    void vulnerabilityWithNoSourceLocationOrCweStillProducesAFinding() throws Exception {
+        String fvdl = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <FVDL xmlns="xmlns://www.fortify.com/schema/fvdl" version="1.0">
+                  <Vulnerabilities>
+                    <Vulnerability>
+                      <ClassInfo><ClassID>C1</ClassID><Type>Weak Randomness</Type><DefaultSeverity>2.0</DefaultSeverity></ClassInfo>
+                      <InstanceInfo><InstanceID>I1</InstanceID></InstanceInfo>
+                    </Vulnerability>
+                  </Vulnerabilities>
+                </FVDL>
+                """;
+        Path fvdlFile = tempDir.resolve("audit.fvdl");
+        Files.write(fvdlFile, fvdl.getBytes(StandardCharsets.UTF_8));
+
+        List<Finding> findings = new FortifyConnector().ingest(ScanSource.ofPath(fvdlFile));
+
+        assertThat(findings).hasSize(1);
+        Finding f = findings.get(0);
+        assertThat(f.location().file()).isNull();
+        assertThat(f.location().startLine()).isNull();
+        assertThat(f.cwe()).isEmpty();
+        assertThat(f.title()).isEqualTo("Weak Randomness");
+    }
+
+    @Test
+    void emptySubtypeOmitsParenthesesFromTitle() throws Exception {
+        String fvdl = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <FVDL xmlns="xmlns://www.fortify.com/schema/fvdl" version="1.0">
+                  <Vulnerabilities>
+                    <Vulnerability>
+                      <ClassInfo><ClassID>C1</ClassID><Type>Path Manipulation</Type><Subtype></Subtype></ClassInfo>
+                      <InstanceInfo><InstanceID>I1</InstanceID></InstanceInfo>
+                    </Vulnerability>
+                  </Vulnerabilities>
+                </FVDL>
+                """;
+        Path fvdlFile = tempDir.resolve("audit.fvdl");
+        Files.write(fvdlFile, fvdl.getBytes(StandardCharsets.UTF_8));
+
+        Finding f = new FortifyConnector().ingest(ScanSource.ofPath(fvdlFile)).get(0);
+
+        assertThat(f.title()).isEqualTo("Path Manipulation");
     }
 }
