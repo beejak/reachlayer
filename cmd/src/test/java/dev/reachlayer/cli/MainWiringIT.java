@@ -19,6 +19,7 @@ import dev.reachlayer.core.spi.LlmProvider;
 import dev.reachlayer.core.spi.OutputRenderer;
 import dev.reachlayer.core.spi.ScanSource;
 import dev.reachlayer.core.spi.ScannerConnector;
+import dev.reachlayer.output.sarif.SarifOutputRenderer;
 import dev.reachlayer.scoring.RiskScorer;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -71,7 +72,9 @@ class MainWiringIT {
                 new FixAdvisorService(provider, ReachlayerConfig.defaults().advisor(), new ContextBuilder(), repoRoot());
 
         Path outFile = tempDir.resolve("report.md");
-        List<OutputRenderer> outputRenderers = Main.buildOutputRenderers(outFile, false); // no GitHub env vars in CI
+        Path sarifOutFile = tempDir.resolve("report.sarif");
+        List<OutputRenderer> outputRenderers =
+                Main.buildOutputRenderers(outFile, false, sarifOutFile); // no GitHub env vars in CI
 
         Orchestrator orchestrator = new Orchestrator(
                 connectors,
@@ -101,6 +104,20 @@ class MainWiringIT {
         String written = Files.readString(outFile);
         assertThat(written).contains("reachlayer:report"); // the default comment marker
         assertThat(written).contains("reachlayer/reachlayer");
+
+        assertThat(sarifOutFile).exists();
+        String sarifJson = Files.readString(sarifOutFile);
+        assertThat(sarifJson).contains("\"version\" : \"2.1.0\"");
+        assertThat(sarifJson).contains("CVE-2021-44228"); // at least one of the 3 Black Duck CVEs surfaces in properties
+    }
+
+    @Test
+    void buildOutputRenderersAddsSarifRendererOnlyWhenPathProvided(@TempDir Path tempDir) {
+        List<OutputRenderer> withSarif = Main.buildOutputRenderers(null, false, tempDir.resolve("out.sarif"));
+        assertThat(withSarif).anyMatch(r -> r instanceof SarifOutputRenderer);
+
+        List<OutputRenderer> withoutSarif = Main.buildOutputRenderers(null, false, null);
+        assertThat(withoutSarif).noneMatch(r -> r instanceof SarifOutputRenderer);
     }
 
     @Test

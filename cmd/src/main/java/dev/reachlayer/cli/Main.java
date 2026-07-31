@@ -23,6 +23,7 @@ import dev.reachlayer.enrich.kev.KevClient;
 import dev.reachlayer.output.api.ConsoleOutputRenderer;
 import dev.reachlayer.output.githubpr.GitHubPrCommentRenderer;
 import dev.reachlayer.output.githubpr.GitHubRestApiClient;
+import dev.reachlayer.output.sarif.SarifOutputRenderer;
 import dev.reachlayer.reach.ReachabilityTagger;
 import dev.reachlayer.reach.signatures.ComponentLevelSignatureSource;
 import dev.reachlayer.scoring.RiskScorer;
@@ -67,6 +68,12 @@ public final class Main implements Callable<Integer> {
 
     @Option(names = "--out", defaultValue = "", description = "Path to also write the rendered Markdown report to.")
     private String out;
+
+    @Option(
+            names = "--sarif-out",
+            defaultValue = "",
+            description = "Path to also write a SARIF 2.1.0 report to (for GitHub code scanning upload).")
+    private String sarifOut;
 
     @Option(names = "--cache-dir", defaultValue = ".reachlayer-cache", description = "EPSS/KEV disk cache directory.")
     private String cacheDir;
@@ -114,8 +121,10 @@ public final class Main implements Callable<Integer> {
         ScoringStage scoringStage = findings -> new RiskScorer().score(findings, cfg.scoring());
         LlmProvider provider = buildProvider(cfg.advisor().provider());
         AdvisorStage advisorStage = new FixAdvisorService(provider, cfg.advisor(), new ContextBuilder(), repoPath);
-        List<OutputRenderer> outputRenderers =
-                buildOutputRenderers(out.isBlank() ? null : Path.of(out), postPrComment);
+        List<OutputRenderer> outputRenderers = buildOutputRenderers(
+                out.isBlank() ? null : Path.of(out),
+                postPrComment,
+                sarifOut.isBlank() ? null : Path.of(sarifOut));
 
         String repoLabel = firstNonBlank(System.getenv("GITHUB_REPOSITORY"), repo);
 
@@ -144,9 +153,12 @@ public final class Main implements Callable<Integer> {
         return "anthropic".equalsIgnoreCase(providerName) ? AnthropicLlmProvider.fromEnvironment() : new NoopLlmProvider();
     }
 
-    static List<OutputRenderer> buildOutputRenderers(Path outFile, boolean attemptPrComment) {
+    static List<OutputRenderer> buildOutputRenderers(Path outFile, boolean attemptPrComment, Path sarifOutFile) {
         List<OutputRenderer> renderers = new ArrayList<>();
         renderers.add(new ConsoleOutputRenderer(System.out, outFile));
+        if (sarifOutFile != null) {
+            renderers.add(new SarifOutputRenderer(sarifOutFile));
+        }
         if (attemptPrComment) {
             try {
                 renderers.add(GitHubPrCommentRenderer.fromEnvironment(GitHubRestApiClient.fromEnvironment()));
