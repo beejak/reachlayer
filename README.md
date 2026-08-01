@@ -195,6 +195,8 @@ list of inputs/outputs.
 | [`docs/evaluation-pipeline.md`](docs/evaluation-pipeline.md) | The larger synthetic-corpus evaluation pipeline and its CI job. |
 | [`docs/success-criteria.md`](docs/success-criteria.md) | Concrete, falsifiable success/failure criteria for the repo and its tests, including honest gaps. |
 | [`docs/architecture-optimization.md`](docs/architecture-optimization.md) | Network-design and optimization review. |
+| [`docs/competitive-landscape-commercial-technical.md`](docs/competitive-landscape-commercial-technical.md) | Blunt research pass on commercial ASPM competitors and JVM call-graph technical state of the art. |
+| [`docs/competitive-landscape-oss.md`](docs/competitive-landscape-oss.md) | Blunt research pass on OSS (and vendor-native) reachability/triage tools — what's genuinely uncontested vs. not. |
 | [`docs/lessons-learned.md`](docs/lessons-learned.md) | Running log of concrete findings from building this project. |
 
 ## Status

@@ -3,6 +3,39 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Competitive research changed the pitch, not the roadmap
+
+- **The most useful competitive-research finding was about vendors, not competitors.** Two
+  background research agents dug into commercial ASPMs and OSS/vendor-native tooling
+  (`docs/competitive-landscape-commercial-technical.md`, `docs/competitive-landscape-oss.md`).
+  The single most actionable finding wasn't a competing product — it was that **Black Duck's own
+  Detect scanner already ships native Java call-graph reachability** (`--detect.impact.analysis.enabled`),
+  meaning the "unmodified" Black Duck export this project ingests may already carry a reachability
+  verdict `BlackDuckConnector` currently discards. Flagged (not fixed) in `docs/connectors.md` and
+  `PLAN.md` risk #11 — fixing it means parsing a field we don't even have a fixture for yet, and per
+  this repo's own no-real-vendor-data rule (`CONTRIBUTING.md`), the fixture would need to be built
+  synthetic-first before the parsing gap can be closed. Lesson: "layer, never replace" cuts both
+  ways — it's not just about not overriding a scanner's *severity*, it's about not silently
+  discarding a scanner's *own* enrichment fields either.
+- **A positioning claim can be "literally true" and still misleading.** PLAN.md's original claim
+  ("no OSS project combines reachability with Fortify/Black Duck ingestion") held up under direct
+  GitHub search — genuinely true. But treating that as "our reachability is novel" would have been
+  wrong: dep-scan/atom (usage-slicing) and Semgrep Supply Chain (dataflow/taint, with a public blog
+  post explicitly critiquing CHA-only reachability's false-positive-on-"reachable" failure mode) are
+  both more technically sophisticated than this project's CHA approach, and both exist today. Fixed
+  by rewriting the PLAN.md §1 pitch to stop leading with "reachability novelty" and lead with
+  "cross-scanner correlation + OSS + non-blocking PR-native delivery" instead — a narrower but
+  actually-defensible claim. Lesson: when research contradicts a document's framing rather than its
+  facts, the fix is rewriting the pitch, not just appending a caveat.
+- **A caveats doc that only lists one failure direction is half a caveats doc.**
+  `docs/reachability-caveats.md` documented false negatives (`unreachable` when actually reachable)
+  in detail but said nothing about the opposite: CHA over-approximates, so it can tag something
+  `reachable` when the runtime conditions to trigger it aren't actually met. Semgrep's own
+  engineering blog makes exactly this critique of CHA-only tools. Added a new section rather than
+  editing the existing one, since it's a distinct failure mode with a distinct (lower, for this
+  project specifically, since reachability is additive-only) severity — conflating the two would
+  have understated the asymmetry.
+
 ## 2026-08-01 — Baseline/diff mode, observability, evaluation pipeline, and a real bug found
 
 - **A background architecture-review agent found a genuine correctness bug, not just latency
