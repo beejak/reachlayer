@@ -78,6 +78,33 @@ class ReachabilityTaggerFixtureIT {
     }
 
     @Test
+    void chaFailsToResolveCallEdgesThroughALambdaDispatchAConfirmedFalseNegative() throws Exception {
+        // This reproduces, for real, the invokedynamic/lambda gap that docs/reachability-caveats.md
+        // previously only cited from an unverified secondary source
+        // (docs/competitive-landscape-commercial-technical.md). LambdaVulnerableComponent.unsafeMethod()
+        // genuinely IS reachable at runtime -- LambdaDispatchController.reachViaLambda() is a real
+        // Spring MVC entry point that calls it through a java.util.function.Supplier lambda -- but
+        // SootUp 1.1.2's ClassHierarchyAnalysisAlgorithm has no invokedynamic/lambda-metafactory
+        // resolution at all (confirmed by inspecting sootup.callgraph-1.1.2.jar's contents: no
+        // lambda/invokedynamic-handling classes exist in it), so the call edge from
+        // Supplier.get() to the lambda body is never added to the graph.
+        //
+        // This assertion intentionally documents the CURRENT (wrong, from a runtime-behavior
+        // standpoint) tag as a known, reproduced limitation -- not because UNREACHABLE is correct
+        // here, but so that a future SootUp upgrade or custom invokedynamic edge resolver that
+        // fixes this will make this specific test start failing, which is exactly the signal
+        // needed to know the fix worked and this comment/docs/reachability-caveats.md need updating.
+        Path classesRoot = fixtureClassesRoot();
+        ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
+
+        Finding finding = scaFinding("dev.reachlayer.fixtures.vulnapp.LambdaVulnerableComponent");
+        Finding tagged = tagger.tag(List.of(finding)).get(0);
+
+        assertThat(tagged.reachability()).isEqualTo(Reachability.UNREACHABLE);
+        assertThat(tagged.reachEvidence()).contains("no call path found");
+    }
+
+    @Test
     void tagsSastFindingWithComponentLessLocationAgainstTheSameCallGraph() throws Exception {
         Path classesRoot = fixtureClassesRoot();
         ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
