@@ -3,6 +3,26 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — "RTA is a low-effort upgrade" didn't survive five minutes of decompiling
+
+- **A flagged claim can be wrong in a more interesting way than "true" or "false."** PLAN.md's
+  tech-stack table carried an unverified note that RTA was "an available, low-effort precision
+  upgrade over CHA-only that hasn't been adopted." Decompiling `RapidTypeAnalysisAlgorithm` (right
+  after fixing CHA's `invokedynamic` gap, with the byte-level habits from that work still active)
+  showed RTA has *no* special-case for `invokedynamic` either — unlike CHA, which explicitly
+  detects and short-circuits it, RTA just falls through to resolving the SAM interface's abstract
+  method and hopes its instantiated-class tracking finds the implementor, which it structurally
+  can't for a JVM-synthesized lambda class. So RTA wouldn't just "also have this gap" — it would
+  likely fail the same case *silently*, with no equivalent to CHA's clean, documented, decompiled
+  early-return to reason about. "Available" was true; "low-effort precision upgrade" undersold a
+  real regression risk and ignored that `RapidTypeAnalysisAlgorithm` doesn't even share a class
+  hierarchy with `ClassHierarchyAnalysisAlgorithm`, so today's fix wouldn't carry over for free.
+- **The right fix for a flagged claim isn't always code — sometimes it's just a sharper caveat.**
+  No engineering change was made here; PLAN.md's tech-stack table was corrected to describe the
+  actual tradeoff (RTA's narrower reachable-set premise trades away some of CHA's deliberate
+  over-approximation margin, the same margin PLAN.md §9 risk 1 relies on) so a future contributor
+  doesn't reach for RTA as a "free" upgrade without understanding what it costs.
+
 ## 2026-08-01 — Fixing the invokedynamic/lambda gap turned out to be a small, surgical patch
 
 - **Decompiling the exact failing method, not just the containing class, found the real
