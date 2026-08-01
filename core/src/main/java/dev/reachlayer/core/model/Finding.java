@@ -32,6 +32,7 @@ public final class Finding {
     // --- fields Reachlayer adds, progressively ---
     private final Reachability reachability;
     private final String reachEvidence;
+    private final Reachability vendorReachability;
     private final Epss epss;
     private final boolean kev;
     private final BlastRadius blastRadius;
@@ -55,6 +56,7 @@ public final class Finding {
         this.description = b.description;
         this.reachability = b.reachability == null ? Reachability.UNKNOWN : b.reachability;
         this.reachEvidence = b.reachEvidence == null ? "not analyzed" : b.reachEvidence;
+        this.vendorReachability = b.vendorReachability;
         this.epss = b.epss;
         this.kev = b.kev;
         this.blastRadius = b.blastRadius == null ? BlastRadius.NONE : b.blastRadius;
@@ -120,6 +122,17 @@ public final class Finding {
         return reachEvidence;
     }
 
+    /**
+     * The scanner's own reachability/impact-analysis verdict, when its export carries one (e.g.
+     * Black Duck Detect's "Vulnerability Impact Analysis" — see {@code docs/connectors.md}), as a
+     * second signal alongside Reachlayer's own computed {@link #reachability()}. {@code null} when
+     * the scanner didn't report one, which is the common case. Never used in place of Reachlayer's
+     * own tag — see PLAN.md §2 principle 2, "layer, never replace" — only surfaced alongside it.
+     */
+    public Reachability vendorReachability() {
+        return vendorReachability;
+    }
+
     public Epss epss() {
         return epss;
     }
@@ -171,6 +184,7 @@ public final class Finding {
         b.description = description;
         b.reachability = reachability;
         b.reachEvidence = reachEvidence;
+        b.vendorReachability = vendorReachability;
         b.epss = epss;
         b.kev = kev;
         b.blastRadius = blastRadius;
@@ -236,6 +250,7 @@ public final class Finding {
         private String description;
         private Reachability reachability;
         private String reachEvidence;
+        private Reachability vendorReachability;
         private Epss epss;
         private boolean kev;
         private BlastRadius blastRadius;
@@ -319,6 +334,11 @@ public final class Finding {
 
         public Builder reachEvidence(String reachEvidence) {
             this.reachEvidence = reachEvidence;
+            return this;
+        }
+
+        public Builder vendorReachability(Reachability vendorReachability) {
+            this.vendorReachability = vendorReachability;
             return this;
         }
 

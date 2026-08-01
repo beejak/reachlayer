@@ -51,6 +51,24 @@ class MarkdownReportFormatterTest {
     }
 
     @Test
+    void reachabilityCellNotesVendorDisagreementButNotAgreement() {
+        Finding disagreeing =
+                fullyPopulatedFinding().toBuilder().vendorReachability(Reachability.UNREACHABLE).build();
+        Finding agreeing =
+                fullyPopulatedFinding().toBuilder()
+                        .id("full-2")
+                        .vendorReachability(Reachability.REACHABLE)
+                        .build();
+
+        String disagreeingMarkdown =
+                formatter.format(RankedReport.of(List.of(disagreeing), "acme/widgets", 5), MARKER);
+        String agreeingMarkdown = formatter.format(RankedReport.of(List.of(agreeing), "acme/widgets", 5), MARKER);
+
+        assertThat(disagreeingMarkdown).contains("reachable (vendor: unreachable)");
+        assertThat(agreeingMarkdown).doesNotContain("vendor:");
+    }
+
+    @Test
     void handlesSparseFindingWithoutThrowingAndUsesPlaceholders() {
         Finding sparse = Finding.builder()
                 .id("sparse-1")

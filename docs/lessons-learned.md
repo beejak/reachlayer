@@ -3,6 +3,38 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Surfacing a vendor signal without ever letting it silently win
+
+- **A flagged research finding ("we might be discarding a vendor-supplied reachability field")
+  turned into a concrete mechanism, not a fix.** Closing PLAN.md risk #11 for real would mean
+  verifying the actual field name/shape Black Duck Detect uses when
+  `--detect.impact.analysis.enabled` is on — something this project cannot do without a real
+  vendor export, which the no-real-vendor-data rule (`CONTRIBUTING.md`) forbids fetching. So the
+  right scope for this pass wasn't "implement the real integration," it was "build the plumbing so
+  that *if* a real field shows up with roughly this shape, the pipeline already knows what to do
+  with it, and make that visible in the PR comment today using the synthetic shape this project
+  invented." `Finding.vendorReachability()` is deliberately a second, separate field from
+  `Finding.reachability()` — never a replacement, never merged into one value — because the whole
+  point of surfacing it was to make disagreement between two signals visible, not to pick a winner.
+- **A `toBuilder()`-based immutable model means a new field, once added to the builder/copy
+  method, flows through every existing pipeline stage for free.** `vendorReachability` is set once
+  by `BlackDuckConnector` at ingestion and needed zero changes anywhere in the pipeline between
+  ingestion and `ReachabilityTagger` (enrichment, scoring, baseline stages all pass it through
+  unmodified via `toBuilder()`) purely because every stage already builds on top of the previous
+  `Finding` rather than constructing a new one from scratch. This is the same lesson as the
+  `PipelineMetrics`/`Instant` entry below in spirit, but from the opposite direction: sometimes the
+  existing design *already* generalizes correctly, and the only work needed is adding the field.
+- **"Disagreement" and "inconclusive" are not the same finding, and conflating them would have
+  been a smaller, worse feature.** When Reachlayer's own tag is a genuine `REACHABLE`/`UNREACHABLE`
+  verdict and a vendor signal disagrees, that's an actionable conflict between two real analyses.
+  When Reachlayer's own tag is `UNKNOWN` (call graph unavailable, component not observed, no
+  signature), there was no real Reachlayer verdict to disagree with — the vendor's signal is just
+  additional information filling a gap. `ReachabilityTagger.noteVendorDisagreement` words these two
+  cases differently in `reachEvidence` on purpose; testing both cases separately
+  (`ReachabilityTaggerFixtureIT` for the real-call-graph disagreement, `ReachabilityTaggerTest` for
+  the inconclusive-own-analysis case) caught that the first draft's single wording made the
+  inconclusive case read as a false claim of disagreement.
+
 ## 2026-08-01 — The evaluation CI job's first real run caught a bug manual testing missed
 
 - **`./gradlew :<subproject>:run --args="build/out ..."` resolves `build/out` relative to the

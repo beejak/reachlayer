@@ -58,6 +58,26 @@ class ReachabilityTaggerFixtureIT {
     }
 
     @Test
+    void notesDisagreementWithVendorReportedReachabilityWithoutOverridingOwnTag() throws Exception {
+        Path classesRoot = fixtureClassesRoot();
+        ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
+
+        // Reachlayer's own call-graph analysis will tag this REACHABLE (see the test above); the
+        // scanner claims UNREACHABLE. Neither signal should silently win -- both must survive.
+        Finding disagreeing =
+                scaFinding("dev.reachlayer.fixtures.vulnapp.ReachableVulnerableComponent")
+                        .toBuilder()
+                        .vendorReachability(Reachability.UNREACHABLE)
+                        .build();
+
+        Finding tagged = tagger.tag(List.of(disagreeing)).get(0);
+
+        assertThat(tagged.reachability()).isEqualTo(Reachability.REACHABLE);
+        assertThat(tagged.vendorReachability()).isEqualTo(Reachability.UNREACHABLE);
+        assertThat(tagged.reachEvidence()).contains("disagrees with vendor-reported reachability (unreachable)");
+    }
+
+    @Test
     void tagsSastFindingWithComponentLessLocationAgainstTheSameCallGraph() throws Exception {
         Path classesRoot = fixtureClassesRoot();
         ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());

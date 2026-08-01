@@ -8,6 +8,7 @@ import dev.reachlayer.core.model.Cvss;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.FindingKind;
 import dev.reachlayer.core.model.Location;
+import dev.reachlayer.core.model.Reachability;
 import dev.reachlayer.core.spi.ConnectorException;
 import dev.reachlayer.core.spi.ScanSource;
 import dev.reachlayer.core.spi.ScannerConnector;
@@ -25,6 +26,14 @@ import java.util.Locale;
  * per-component-vulnerability JSON shape (documented in {@code docs/connectors.md}) that carries
  * the same load-bearing fields: component coordinate, CVE, CWE, severity, and CVSS. Swapping in a
  * full BDIO JSON-LD reader later only changes this class, not the {@link Finding} contract.
+ *
+ * <p>Also accepts an optional per-vulnerability {@code vendorReachability} field
+ * ({@code "REACHABLE"}/{@code "UNREACHABLE"}/{@code "UNKNOWN"}, case-insensitive), surfaced on
+ * {@link Finding#vendorReachability()} as a second signal alongside Reachlayer's own computed
+ * reachability tag — see {@code docs/connectors.md} for why (Black Duck Detect's native
+ * "Vulnerability Impact Analysis" may already populate a field like this in a real export). This
+ * is Reachlayer's own invented representation for the MVP's simplified schema, not a verified
+ * real-world Black Duck field name.
  */
 public final class BlackDuckConnector implements ScannerConnector {
 
@@ -83,6 +92,7 @@ public final class BlackDuckConnector implements ScannerConnector {
                 Double cvssScore = vulnNode.hasNonNull("cvssScore") ? vulnNode.get("cvssScore").asDouble() : null;
                 String cvssVector = textOrNull(vulnNode, "cvssVector");
                 String description = textOrNull(vulnNode, "description");
+                Reachability vendorReachability = parseVendorReachability(textOrNull(vulnNode, "vendorReachability"));
 
                 Location location = Location.unknown();
                 Finding finding = Finding.builder()
@@ -97,6 +107,7 @@ public final class BlackDuckConnector implements ScannerConnector {
                         .cvss(new Cvss(cvssScore, cvssVector))
                         .title(cveId != null ? cveId : component.coordinate())
                         .description(description)
+                        .vendorReachability(vendorReachability)
                         .putRawField("scanId", scanId)
                         .putRawField("projectName", projectName)
                         .putRawField("projectVersion", projectVersion)
@@ -110,5 +121,18 @@ public final class BlackDuckConnector implements ScannerConnector {
     private static String textOrNull(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() ? null : value.asText();
+    }
+
+    /** Tolerates absent or unrecognized values by returning {@code null} rather than throwing — an
+     * optional field with an unexpected value must never fail ingestion of the finding it's on. */
+    private static Reachability parseVendorReachability(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Reachability.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.FindingKind;
+import dev.reachlayer.core.model.Reachability;
 import dev.reachlayer.core.spi.ConnectorException;
 import dev.reachlayer.core.spi.ScanSource;
 import java.net.URISyntaxException;
@@ -180,5 +181,60 @@ class BlackDuckConnectorTest {
         assertThat(findings).hasSize(2);
         assertThat(findings).extracting(f -> f.id()).doesNotHaveDuplicates();
         assertThat(findings).allMatch(f -> f.cve().contains("CVE-2024-99999"));
+    }
+
+    @Test
+    void parsesOptionalVendorReachabilityFieldCaseInsensitively() throws Exception {
+        Path file = writeJson(
+                """
+                {
+                  "components": [
+                    { "componentName": "lib-a", "componentVersion": "1.0.0",
+                      "vulnerabilities": [ { "cveId": "CVE-2024-11111", "vendorReachability": "reachable" } ] },
+                    { "componentName": "lib-b", "componentVersion": "2.0.0",
+                      "vulnerabilities": [ { "cveId": "CVE-2024-22222", "vendorReachability": "UNREACHABLE" } ] }
+                  ]
+                }
+                """);
+
+        List<Finding> findings = new BlackDuckConnector().ingest(ScanSource.ofPath(file));
+
+        assertThat(findings)
+                .extracting(f -> f.vendorReachability())
+                .containsExactlyInAnyOrder(Reachability.REACHABLE, Reachability.UNREACHABLE);
+    }
+
+    @Test
+    void vendorReachabilityIsNullWhenFieldIsAbsent() throws Exception {
+        Path file = writeJson(
+                """
+                {
+                  "components": [
+                    { "componentName": "lib-a", "componentVersion": "1.0.0",
+                      "vulnerabilities": [ { "cveId": "CVE-2024-33333" } ] }
+                  ]
+                }
+                """);
+
+        Finding f = new BlackDuckConnector().ingest(ScanSource.ofPath(file)).get(0);
+
+        assertThat(f.vendorReachability()).isNull();
+    }
+
+    @Test
+    void vendorReachabilityIsNullRatherThanThrowingWhenFieldHasAnUnrecognizedValue() throws Exception {
+        Path file = writeJson(
+                """
+                {
+                  "components": [
+                    { "componentName": "lib-a", "componentVersion": "1.0.0",
+                      "vulnerabilities": [ { "cveId": "CVE-2024-44444", "vendorReachability": "maybe-ish" } ] }
+                  ]
+                }
+                """);
+
+        Finding f = new BlackDuckConnector().ingest(ScanSource.ofPath(file)).get(0);
+
+        assertThat(f.vendorReachability()).isNull();
     }
 }

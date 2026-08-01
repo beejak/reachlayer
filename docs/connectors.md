@@ -56,24 +56,36 @@ output; see PLAN.md §9 risk 6 on vendor data licensing).
 Fixtures: `fixtures/sample-bdio/scan.json` (synthetic, hand-written — **not** a real Black Duck
 export).
 
-### Flagged research finding: Black Duck Detect already emits its own reachability verdict
+### Vendor-reported reachability: surfaced, not yet verified against a real export
 
 A background competitive-research pass (`docs/competitive-landscape-oss.md`) surfaced that Black
 Duck's own scanner, Detect, ships a native call-graph-based reachability feature for Java —
 "Vulnerability Impact Analysis" (`--detect.impact.analysis.enabled`) — that tags components as
-reachable/unreachable in the Detect output itself. If that field is present in a real,
-customer-run Black Duck export, this connector currently ignores it entirely: `BlackDuckConnector`
-only reads `name`/`version`/`ecosystem`/the vulnerability list per component, with no field for a
-vendor-supplied reachability verdict.
+reachable/unreachable in the Detect output itself.
 
-This has **not been independently verified against a real Black Duck export** (per this project's
-own no-real-vendor-data rule — see `CONTRIBUTING.md`) — treat it as a flagged, high-priority item
-to validate, not a confirmed gap. If confirmed, the implication is direct: Reachlayer's own
-CHA-based `ReachabilityTagger` result and Black Duck's native verdict could disagree, and silently
-preferring one over the other (or ignoring one) would undercut the "layer, never replace" principle
-(PLAN.md §2) just as much as re-bucketing a scanner's severity would. The right fix, if this is
-confirmed, is almost certainly to parse and surface Black Duck's verdict as a second, clearly
-labeled signal alongside Reachlayer's own tag — not to replace either with the other.
+**Status: the connector and pipeline now have a place to put this signal, but the real-world field
+name/shape is still unverified** (per this project's own no-real-vendor-data rule — see
+`CONTRIBUTING.md`, we cannot check a real export to confirm). `BlackDuckConnector` accepts an
+optional per-vulnerability `vendorReachability` field
+(`"REACHABLE"`/`"UNREACHABLE"`/`"UNKNOWN"`, case-insensitive; absent or unrecognized values parse
+to `null` rather than failing ingestion) and surfaces it on `Finding.vendorReachability()` — a
+second signal that exists *alongside* Reachlayer's own `Finding.reachability()`, never in place of
+it. `ReachabilityTagger` never lets one silently win: when both are present and differ, it appends
+a note to `reachEvidence` (worded as "inconclusive" when Reachlayer's own tag is `UNKNOWN`, or as a
+genuine "disagreement" when both sides produced a concrete verdict), and `MarkdownReportFormatter`
+shows the disagreement inline in the PR comment's Reachability column, e.g.
+`reachable (vendor: unreachable)`. Agreement is not called out — it isn't actionable the way a
+disagreement is.
+
+**What's still unverified:** the field name `vendorReachability` and its three-value shape are
+Reachlayer's own invented representation, consistent with how this connector's whole JSON schema is
+already a simplified MVP stand-in for real BDIO (see above) — not a confirmed match to whatever
+field name and shape a real Black Duck Detect export with impact analysis enabled actually uses.
+Closing that gap requires either real documentation/schema of the actual field (not just the
+marketing description this research was based on) or a customer willing to share a redacted real
+export's shape — neither of which this project can pursue on its own per the no-real-vendor-data
+rule. Treat the *mechanism* (a second signal, surfaced not suppressed) as done; treat the *exact
+wire format* as still open.
 
 ## Writing a new connector
 
