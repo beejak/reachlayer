@@ -208,6 +208,11 @@ CHA/RTA-style call-graph approximation and component-level signatures; blast-rad
 entry-point discovery are intentionally simple, conservative heuristics that lean toward
 `unknown` rather than claiming certainty. See `docs/reachability-caveats.md`.
 
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and PR expectations, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+for community standards, and [`SECURITY.md`](SECURITY.md) for how to report a vulnerability.
+
 ## License
 
 Apache-2.0, see [`LICENSE`](LICENSE).
