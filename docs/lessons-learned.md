@@ -3,6 +3,60 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Baseline/diff mode, observability, evaluation pipeline, and a real bug found
+
+- **A background architecture-review agent found a genuine correctness bug, not just latency
+  nits.** `GitHubRestApiClient.listIssueComments` never paginated — it fetched only GitHub's
+  default first page (30 comments). On any PR with more comments than that, Reachlayer's own
+  marker comment could be invisible, so `GitHubPrCommentRenderer` would create a duplicate comment
+  instead of upserting — silently defeating the project's own "single upserted comment, never
+  spam" design goal. This class had **no dedicated unit test at all** before this was found; the
+  only coverage was `GitHubPrCommentRendererTest`, which fakes the whole `GitHubApiClient`
+  interface and never exercises this class's real HTTP/pagination logic. Fixed and verified
+  against a real local `com.sun.net.httpserver.HttpServer` (JDK-builtin, no new dependency)
+  simulating a multi-page response. Lesson: an interface-level fake in tests can hide that the
+  *real* implementation behind it is completely untested — worth periodically checking "which
+  concrete classes implementing this interface have zero direct tests," not just "is the interface
+  covered."
+
+- **Constructor overloading (not extending an existing signature) is the right call whenever a new
+  optional stage has *multiple* existing call sites, not just one.** `output/sarif`'s
+  `buildOutputRenderers` extension (previous session) had to update its one `MainWiringIT` call
+  site because it added a parameter to an *existing* method. `Orchestrator`'s baseline-stage
+  addition instead added a new 8-arg constructor overload alongside the untouched 7-arg one — zero
+  changes needed to `OrchestratorTest`'s three pre-existing call sites. The deciding factor wasn't
+  "is this cleaner in the abstract," it was "how many existing call sites would a signature change
+  force me to touch" — more than one is the threshold where an overload beats extending.
+
+- **An evaluation corpus that references real fixture classes (not just synthetic data) is what
+  actually proves an engine works end-to-end.** Every other test in this repo either used the tiny
+  5-finding golden-path fixture or passed an empty `--classes` (identity passthrough, always
+  `unknown`). Building a larger synthetic corpus whose "anchor" findings deliberately name real
+  classes in `fixtures:vulnerable-spring-app` — and then running the *actual built CLI jar*, not
+  just an in-process test — produced the exact predicted reachability distribution (3 reachable, 2
+  unreachable, 100 unknown) on the first try. This is a stronger proof than any number of
+  unit-level assertions about `ReachabilityTagger` in isolation, because it exercises the real
+  wiring a user's `--classes` flag goes through.
+
+- **A one-line, "obviously correct" perf fix can still hide behind a subtle API design choice.**
+  `KevClient.isKnownExploited(cve)` re-invoked `knownExploitedCves()` (a disk read + JSON parse)
+  on every call, by design — the class intentionally re-checks cache staleness per call, which is
+  correct for *that* class's contract. The fix wasn't to change `KevClient` (that would weaken a
+  deliberate freshness guarantee); it was to hoist ONE call to the already-public
+  `knownExploitedCves()` at the call site (`EnrichmentPipeline`) and check membership locally in
+  the loop. Lesson: when an inefficiency is found inside a well-designed class, check whether the
+  fix belongs at the call site instead of the class itself.
+
+- **Jackson needs `jackson-datatype-jsr310` registered explicitly for `Instant` fields, even
+  though the dependency is already declared.** `PipelineMetrics`'s `Instant startedAt/completedAt`
+  fields threw `InvalidDefinitionException` on first serialization attempt in `MetricsWriterTest`
+  — `core/build.gradle.kts` already declares `jackson-datatype-jsr310` as an `api` dependency, but
+  nothing had ever registered the module on an `ObjectMapper` before (this is exactly the footgun
+  `core.baseline.BaselineStore`'s design spec called out and deliberately avoided by using a plain
+  `String` timestamp instead). `MetricsWriter` registers `JavaTimeModule` properly since its
+  `Instant` fields are a genuine, deliberate part of the public model — the two designs aren't in
+  tension, they're both correct for what each class actually needs.
+
 ## 2026-07-31 — SARIF output renderer (Phase 1, first item)
 
 - **A test's `ObjectMapper` must mirror production's serialization config, or null-omission

@@ -46,6 +46,24 @@ description. See `docs/lessons-learned.md` for concrete gaps this bar has alread
    direct inspection each time a feature was added this session (SARIF: rule dedup and synthetic
    locations checked by hand; baseline: round-trip output inspected; metrics: JSON output inspected
    and shown to reflect a real network-degradation event caught during this exact process).
+8. **The full pipeline, at more-than-trivial scale, produces genuine reachability signal — not
+   just `unknown`.** Verified by `cmd`'s `EvaluationCorpusIT` and the CI `evaluation` job (see
+   `docs/evaluation-pipeline.md`): a ~105-finding synthetic corpus run through the real CLI with
+   `--classes` pointed at `fixtures:vulnerable-spring-app`'s real compiled bytecode produced exactly
+   the expected distribution — 3 `REACHABLE`, 2 `UNREACHABLE`, 100 `UNKNOWN` — matching the 3
+   SAST + 2 SCA anchor findings that reference real classes in that fixture app. This directly
+   narrows the "reachability engine not independently re-verified" gap noted below: the engine
+   itself wasn't modified, but its behavior end-to-end through the full pipeline is now genuinely
+   exercised at scale, not just via the pre-existing isolated `ReachabilityTaggerFixtureIT`.
+9. **A real correctness bug was found and fixed, not just latency nits.** An architecture/network
+   review (`docs/architecture-optimization.md`) found that `GitHubRestApiClient.listIssueComments`
+   never paginated — on a PR with more than GitHub's default 30-comment page size, Reachlayer's
+   marker comment could be invisible, causing a duplicate comment instead of an upsert (silently
+   defeating this project's own "single upserted comment" design goal). Fixed and verified against
+   a real local HTTP server (`GitHubRestApiClientTest`, using JDK's built-in `HttpServer` — this
+   class previously had no dedicated test at all). A related inefficiency (`EnrichmentPipeline`
+   re-reading/re-parsing the on-disk KEV cache file once per finding instead of once per run) was
+   fixed alongside it.
 
 ## Failure
 
@@ -62,6 +80,9 @@ Any of the following is a regression, full stop:
   fallback (see the honest gap below — this is *tested* only via fake fetchers, never against a
   live failure, though this exact fallback was observed for real in this sandbox, see
   `docs/lessons-learned.md`).
+- The `evaluation` CI job's reachability sanity check fails (i.e. the ~105-finding synthetic
+  corpus stops producing at least one `REACHABLE` and one `UNREACHABLE` finding) — this would mean
+  either the corpus generator's anchors or the reachability engine's behavior regressed.
 
 ## Known gaps (honest, not swept under the rug)
 
@@ -73,8 +94,10 @@ Any of the following is a regression, full stop:
   `HttpFetcher`s are used, per repo-wide test convention) — but the graceful-degradation path
   *was* exercised for real in this session, when this sandbox's proxy blocked the live calls and
   the pipeline correctly fell back and still produced a complete report.
-- **The reachability (SootUp call-graph) engine was not touched or independently re-verified**
-  during this round of work — its correctness predates this session.
+- **The reachability (SootUp call-graph) engine's internals were not modified** during this round
+  of work — its correctness predates this session. Its end-to-end behavior through the full
+  pipeline is now exercised at scale by the evaluation pipeline (item 8 above), but that is a
+  behavioral/integration check, not a re-verification of `CallGraphBuilder`'s SootUp usage itself.
 - **No dedicated fuzz/property test asserts "finding count is conserved end-to-end"** beyond the
   additive-by-design architecture and the targeted tests above — a reasonable future addition for
   even higher confidence, not currently present.
@@ -88,5 +111,5 @@ java -jar cmd/build/libs/cmd-all.jar --fortify fixtures/sample-fpr/audit.fvdl \
   --sarif-out /tmp/r.sarif --baseline-out /tmp/r-baseline.json --metrics-out /tmp/r-metrics.json
 ```
 
-Then watch `.github/workflows/ci.yml`'s `build` and `sarif-dogfood` jobs both pass on the next
-push/PR.
+Then watch `.github/workflows/ci.yml`'s `build`, `sarif-dogfood`, and `evaluation` jobs all pass on
+the next push/PR.
