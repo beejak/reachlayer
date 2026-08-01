@@ -3,6 +3,40 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Fixing the invokedynamic/lambda gap turned out to be a small, surgical patch
+
+- **Decompiling the exact failing method, not just the containing class, found the real
+  extension point.** Earlier the same day, confirming this gap only required knowing that SootUp's
+  CHA algorithm produced no edge for `invokedynamic`. Fixing it required knowing *why*, precisely —
+  `javap -c` on `ClassHierarchyAnalysisAlgorithm.resolveCall`'s bytecode showed an explicit
+  `instanceof JDynamicInvokeExpr` check returning `Stream.empty()`, and that the method itself is
+  `protected`, not `private` or `final`. That one fact turned "this needs a SootUp upgrade or a
+  hand-rolled bytecode analyzer" into "subclass and override one method" — a much smaller, safer
+  fix than either previously-guessed option in the earlier confirmation pass.
+- **SootUp's own bytecode frontend had already done the hard part.** The instinct going in was
+  "I'll need to parse the `invokedynamic` bootstrap arguments' constant-pool entries myself to find
+  the `LambdaMetafactory` target." Untrue: `JDynamicInvokeExpr.getBootstrapArgs()` already returns
+  typed `sootup.core.jimple.common.constant.MethodHandle` objects with a `getMethodSignature()`
+  accessor — SootUp's ASM-based parser had already resolved the bootstrap method handle into a
+  proper `MethodSignature`. The entire fix is a ~15-line `resolveCall` override; no bytecode
+  parsing, no constant-pool inspection, no dependency on `LambdaMetafactory`'s exact bootstrap
+  argument ordering.
+- **The regression test that was written to flip did flip, and updating it was mechanical, not a
+  redesign.** `chaFailsToResolveCallEdgesThroughALambdaDispatchAConfirmedFalseNegative`'s own
+  comment (written earlier the same day) predicted exactly this moment: "a future ... fix ... will
+  make this specific test start failing, which is exactly the signal needed to know the fix
+  worked." Running the suite after the fix produced exactly one failure, in exactly that test, with
+  exactly the expected old-vs-new values (`UNREACHABLE` → `REACHABLE`) — strong, independent
+  confirmation the fix does what it claims, from a test written before the fix existed.
+- **A fix for one `invokedynamic` shape needs an explicit test for a different `invokedynamic`
+  shape it must NOT touch.** Lambdas aren't the only thing that compiles to `invokedynamic` — Java
+  9+ string concatenation does too, via `StringConcatFactory`, which carries no method-handle
+  target the way `LambdaMetafactory` does. Without a dedicated fixture
+  (`StringConcatController.concat()`, verified via `javap` to actually emit
+  `invokedynamic ... makeConcatWithConstants`) and test asserting call-graph construction still
+  succeeds cleanly for it, there'd be no evidence the fix generalizes safely rather than
+  coincidentally only having been tried against the one case it was designed for.
+
 ## 2026-08-01 — Suppression-of-display rules: the last piece of the config-file bullet
 
 - **"Never suppress a finding" and "let a team hide known noise" are not actually in tension, but

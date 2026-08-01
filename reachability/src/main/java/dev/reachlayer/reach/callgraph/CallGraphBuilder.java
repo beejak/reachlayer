@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sootup.callgraph.CallGraph;
 import sootup.callgraph.CallGraphAlgorithm;
-import sootup.callgraph.ClassHierarchyAnalysisAlgorithm;
 import sootup.core.model.SootMethod;
 import sootup.core.model.SourceType;
 import sootup.core.signatures.MethodSignature;
@@ -36,6 +35,11 @@ import sootup.java.core.views.JavaView;
  * calling {@code JavaView.getClasses()} would force SootUp to parse every class on every input
  * location (including the full JDK runtime image, if included), which is exactly the "1-8 hour
  * scan" problem PLAN.md §9 risk 3 warns about.
+ *
+ * <p>Uses {@link LambdaAwareChaAlgorithm} rather than SootUp's stock {@code
+ * ClassHierarchyAnalysisAlgorithm} directly — it resolves {@code invokedynamic}/lambda call sites
+ * that the stock algorithm silently drops (see {@code docs/reachability-caveats.md}), while
+ * remaining CHA in every other respect.
  */
 public final class CallGraphBuilder {
 
@@ -85,7 +89,7 @@ public final class CallGraphBuilder {
                             + classesRoot);
         }
 
-        CallGraphAlgorithm cha = new ClassHierarchyAnalysisAlgorithm(view);
+        CallGraphAlgorithm cha = new LambdaAwareChaAlgorithm(view);
         CallGraph callGraph = cha.initialize(seeds);
         return new CallGraphResult(view, callGraph, resolvedLabels);
     }
