@@ -1,5 +1,6 @@
 package dev.reachlayer.enrich.epss;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.reachlayer.core.model.Epss;
 import java.io.IOException;
@@ -179,9 +180,11 @@ public final class EpssClient {
     }
 
     /** Shape of the {@code https://api.first.org/data/v1/epss} JSON response. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record ApiResponse(String status, List<ApiEntry> data) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     private record ApiEntry(String cve, String epss, String percentile, String date) {
     }
 
