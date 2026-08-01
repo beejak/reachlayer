@@ -27,6 +27,13 @@ public final class MarkdownReportFormatter {
     /**
      * Formats {@code report} as Markdown, prefixed with {@code marker} on its own line.
      *
+     * <p>When at least one finding has a non-{@code null} {@link Finding#isNew()} (baseline/diff
+     * mode was active for this run — see PLAN.md §5 Phase 1), the framing changes: new findings
+     * surface first, in their own risk-ranked table; pre-existing findings are still fully listed,
+     * just collapsed. Never drops data — see PLAN.md principle 3 ("never suppress a finding").
+     * When no finding has a non-{@code null} {@code isNew()} (the default — no baseline was
+     * supplied for this run), output is byte-for-byte identical to before this mode existed.
+     *
      * @param report the ranked findings to render
      * @param marker an HTML-comment marker (e.g. {@code "<!-- reachlayer:report -->"}) used by
      *     upserting renderers to locate their own previous comment; may be {@code null}/blank, in
@@ -42,6 +49,18 @@ public final class MarkdownReportFormatter {
         String repo = report.repo() == null || report.repo().isBlank() ? "(unknown repo)" : report.repo();
         sb.append("## Reachlayer risk triage — ").append(repo).append('\n').append('\n');
 
+        boolean baselineActive = report.findings().stream().anyMatch(f -> f.isNew() != null);
+        if (baselineActive) {
+            appendBaselineAwareBody(sb, report);
+        } else {
+            appendUndiffedBody(sb, report);
+        }
+
+        return sb.toString();
+    }
+
+    /** Today's rendering, unchanged: purely risk-ranked top-N/rest, no baseline awareness. */
+    private void appendUndiffedBody(StringBuilder sb, RankedReport report) {
         List<Finding> all = report.findings();
         List<Finding> top = report.top();
         List<Finding> rest = report.rest();
@@ -64,8 +83,65 @@ public final class MarkdownReportFormatter {
             sb.append('\n');
             sb.append("</details>\n");
         }
+    }
 
-        return sb.toString();
+    /**
+     * Baseline-aware rendering: new findings (risk-ranked, capped at {@code report.topN()}, with
+     * overflow in its own collapsible block) surface first; pre-existing findings are fully
+     * listed in a second collapsible block, never further paginated (they're already the
+     * deprioritized bucket by construction — see the design spec's rationale).
+     */
+    private void appendBaselineAwareBody(StringBuilder sb, RankedReport report) {
+        List<Finding> all = report.findings();
+        int topN = report.topN();
+
+        List<Finding> newFindings = all.stream().filter(f -> Boolean.TRUE.equals(f.isNew())).toList();
+        List<Finding> existingFindings = all.stream().filter(f -> !Boolean.TRUE.equals(f.isNew())).toList();
+
+        sb.append(all.size())
+                .append(" finding")
+                .append(all.size() == 1 ? "" : "s")
+                .append(" analyzed against the baseline — ")
+                .append(newFindings.size())
+                .append(" new, ")
+                .append(existingFindings.size())
+                .append(" pre-existing.")
+                .append('\n')
+                .append('\n');
+
+        sb.append("### New findings introduced by this change\n\n");
+        if (newFindings.isEmpty()) {
+            sb.append("_No new findings introduced by this change compared to the baseline._\n");
+        } else {
+            List<Finding> newTop = newFindings.size() <= topN ? newFindings : newFindings.subList(0, topN);
+            List<Finding> newRest =
+                    newFindings.size() <= topN ? List.of() : newFindings.subList(topN, newFindings.size());
+
+            appendTable(sb, newTop, 1);
+
+            if (!newRest.isEmpty()) {
+                sb.append('\n');
+                sb.append("<details>\n");
+                sb.append("<summary>Show all ").append(newFindings.size()).append(" new findings</summary>\n\n");
+                appendTable(sb, newRest, newTop.size() + 1);
+                sb.append('\n');
+                sb.append("</details>\n");
+            }
+        }
+
+        if (!existingFindings.isEmpty()) {
+            sb.append('\n');
+            sb.append("### Pre-existing findings (unchanged from baseline)\n\n");
+            sb.append("<details>\n");
+            sb.append("<summary>Show ")
+                    .append(existingFindings.size())
+                    .append(" pre-existing finding")
+                    .append(existingFindings.size() == 1 ? "" : "s")
+                    .append("</summary>\n\n");
+            appendTable(sb, existingFindings, 1);
+            sb.append('\n');
+            sb.append("</details>\n");
+        }
     }
 
     private void appendTable(StringBuilder sb, List<Finding> findings, int rankStart) {

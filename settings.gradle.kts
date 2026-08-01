@@ -15,6 +15,7 @@ include(
     "advisor:providers:anthropic",
     "output:api",
     "output:github-pr",
+    "output:sarif",
     "cmd",
     "fixtures:vulnerable-spring-app",
 )

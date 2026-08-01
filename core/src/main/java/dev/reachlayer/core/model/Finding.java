@@ -38,6 +38,7 @@ public final class Finding {
     private final Double riskScore;
     private final RiskExplanation riskExplanation;
     private final FixSuggestion fixSuggestion;
+    private final Boolean isNew;
 
     private Finding(Builder b) {
         this.id = Objects.requireNonNull(b.id, "id");
@@ -60,6 +61,7 @@ public final class Finding {
         this.riskScore = b.riskScore;
         this.riskExplanation = b.riskExplanation;
         this.fixSuggestion = b.fixSuggestion;
+        this.isNew = b.isNew;
     }
 
     public String id() {
@@ -142,6 +144,17 @@ public final class Finding {
         return fixSuggestion;
     }
 
+    /**
+     * Whether this finding is new relative to a baseline (PLAN.md §5 Phase 1, "baseline/diff
+     * mode"): {@code null} when no baseline was used for this run (the default), {@code true}
+     * when this finding's {@link #id()} was absent from the baseline (introduced since it was
+     * captured), {@code false} when present in it (pre-existing). Set by {@code
+     * core.baseline.BaselineDiffer} via {@code core.pipeline.BaselineStage}.
+     */
+    public Boolean isNew() {
+        return isNew;
+    }
+
     public Builder toBuilder() {
         Builder b = new Builder();
         b.id = id;
@@ -164,6 +177,7 @@ public final class Finding {
         b.riskScore = riskScore;
         b.riskExplanation = riskExplanation;
         b.fixSuggestion = fixSuggestion;
+        b.isNew = isNew;
         return b;
     }
 
@@ -228,6 +242,7 @@ public final class Finding {
         private Double riskScore;
         private RiskExplanation riskExplanation;
         private FixSuggestion fixSuggestion;
+        private Boolean isNew;
 
         public Builder id(String id) {
             this.id = id;
@@ -334,6 +349,11 @@ public final class Finding {
 
         public Builder fixSuggestion(FixSuggestion fixSuggestion) {
             this.fixSuggestion = fixSuggestion;
+            return this;
+        }
+
+        public Builder isNew(Boolean isNew) {
+            this.isNew = isNew;
             return this;
         }
 

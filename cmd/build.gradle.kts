@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":advisor:providers:anthropic"))
     implementation(project(":output:api"))
     implementation(project(":output:github-pr"))
+    implementation(project(":output:sarif"))
 
     implementation("info.picocli:picocli:$picocliVersion")
     runtimeOnly("org.slf4j:slf4j-simple:$slf4jVersion")
