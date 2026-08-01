@@ -84,6 +84,38 @@ only things that changed a decision or caught a real bug. Newest entries first.
   filtered list — this is why `appendUndiffedBody`/`appendBaselineAwareBody` had to take the raw
   finding lists and `topN` as parameters instead of the whole `RankedReport`.
 
+## 2026-08-01 — A "never fail the build" test suite has to catch `Error`, not just `RuntimeException`
+
+- **`catch (RuntimeException)` is the wrong scope for a runner that mirrors an AssertJ
+  `doesNotThrowAnyException()` assertion.** `evals`' `EvalRunner.runNeverFailInvariant()` re-runs
+  the same adversarial `Orchestrator` wiring that `NeverFailBuildInvariantTest` asserts against via
+  `assertThatCode(...).doesNotThrowAnyException()` — and that AssertJ method catches any
+  `Throwable`, including `Error` subclasses (`StackOverflowError`, `OutOfMemoryError`,
+  `AssertionError`). The runner only caught `RuntimeException`, so an `Error` escaping
+  `Orchestrator.run()` would crash scoreboard generation instead of being recorded as a `FAIL` entry
+  — the JUnit hard floor and the scoreboard would then silently disagree about the exact same run.
+  A reviewer (Greptile) caught this before it was ever exercised for real; the fix is a single
+  broadened `catch (Throwable e)`, but the interesting part is the general shape of the bug: any
+  "record a failure and keep going" runner that's meant to mirror a test assertion needs to catch
+  at least as broadly as that assertion does, or the two can drift apart under exactly the
+  conditions ("never fail the build") the suite exists to guard.
+- **Index-based pairing between two independently-produced lists is fragile even when it happens
+  to be correct today.** Both `EvalRunner.runReachabilityEval()` and
+  `ReachabilityAccuracyEvalTest` matched `tagger.tag(findings).get(i)` against the input
+  `corpus.get(i)` by position, assuming `ReachabilityTagger.tag()` preserves input order — true
+  today, but nothing enforces it, and a future parallelized or reordering implementation would
+  silently produce wrong confusion-matrix counts with no compiler or runtime signal. Matching by
+  `Finding.id()` via a small `Map<String, Finding>` instead removes the assumption entirely at
+  negligible cost.
+- **`testRuntimeOnly` doesn't cover a `JavaExec` task's `main`-sourceSet classpath.** `evals`'
+  `runEvals` task runs `EvalRunner.main()` (which lives in `main`, not `test`) off
+  `sourceSets["main"].runtimeClasspath`. A `testRuntimeOnly` slf4j-simple dependency is invisible to
+  that classpath, so `ReachabilityTagger`'s `log.warn(...)` diagnostics were silently dropped by the
+  NOP slf4j binding specifically during scoreboard generation, even though the same dependency
+  correctly surfaced them in `:evals:test`. Since nothing else depends on the `evals` module,
+  promoting it to `runtimeOnly` was a safe, one-line fix with no consumer whose own slf4j binding it
+  could shadow.
+
 ## 2026-08-01 — Entry-point overrides: closing a roadmap item that was already half-done
 
 - **Checking what already exists before building something new saved real work.** PLAN.md's Phase

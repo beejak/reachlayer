@@ -19,6 +19,7 @@ include(
     "cmd",
     "fixtures:vulnerable-spring-app",
     "fixtures:corpus-generator",
+    "evals",
 )
 
 dependencyResolutionManagement {
