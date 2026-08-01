@@ -2,6 +2,7 @@ package dev.reachlayer.reach.entrypoints;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.reachlayer.core.config.EntryPointOverrides;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -144,6 +145,143 @@ class EntryPointScannerTest {
                 });
 
         assertThat(new EntryPointScanner().discover(tempDir)).isEmpty();
+    }
+
+    @Test
+    void withoutOverridesPlainClassIsIgnoredButWithExtraClassesOverrideItsPublicMethodsBecomeEntryPoints()
+            throws IOException {
+        writeClass(
+                tempDir,
+                "com/example/NightlyReportJob",
+                cw -> {
+                    cw.visit(
+                            Opcodes.V17,
+                            Opcodes.ACC_PUBLIC,
+                            "com/example/NightlyReportJob",
+                            null,
+                            "java/lang/Object",
+                            null);
+                    writeDefaultConstructor(cw, "java/lang/Object");
+
+                    MethodVisitor pub = cw.visitMethod(Opcodes.ACC_PUBLIC, "run", "()V", null, null);
+                    pub.visitCode();
+                    pub.visitInsn(Opcodes.RETURN);
+                    pub.visitMaxs(0, 0);
+                    pub.visitEnd();
+
+                    // Non-public methods must NOT be picked up even on an overridden class.
+                    MethodVisitor priv = cw.visitMethod(Opcodes.ACC_PRIVATE, "helper", "()V", null, null);
+                    priv.visitCode();
+                    priv.visitInsn(Opcodes.RETURN);
+                    priv.visitMaxs(0, 0);
+                    priv.visitEnd();
+                });
+
+        assertThat(new EntryPointScanner().discover(tempDir)).isEmpty();
+
+        List<EntryPoint> found =
+                new EntryPointScanner()
+                        .discover(tempDir, new EntryPointOverrides(List.of(), List.of("com.example.NightlyReportJob")));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).className()).isEqualTo("com.example.NightlyReportJob");
+        assertThat(found.get(0).methodName()).isEqualTo("run");
+    }
+
+    @Test
+    void extraClassesOverrideNeverPicksUpConstructorsOrStaticInitializers() throws IOException {
+        writeClass(
+                tempDir,
+                "com/example/HasStaticInit",
+                cw -> {
+                    cw.visit(
+                            Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/HasStaticInit", null, "java/lang/Object", null);
+                    writeDefaultConstructor(cw, "java/lang/Object");
+                    MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+                    clinit.visitCode();
+                    clinit.visitInsn(Opcodes.RETURN);
+                    clinit.visitMaxs(0, 0);
+                    clinit.visitEnd();
+                });
+
+        List<EntryPoint> found =
+                new EntryPointScanner()
+                        .discover(tempDir, new EntryPointOverrides(List.of(), List.of("com.example.HasStaticInit")));
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    void extraAnnotationsOverrideMatchesAnyMethodOnAnyClassRegardlessOfControllerStatus() throws IOException {
+        writeClass(
+                tempDir,
+                "com/example/PlainScheduledTask",
+                cw -> {
+                    cw.visit(
+                            Opcodes.V17,
+                            Opcodes.ACC_PUBLIC,
+                            "com/example/PlainScheduledTask",
+                            null,
+                            "java/lang/Object",
+                            null);
+                    writeDefaultConstructor(cw, "java/lang/Object");
+
+                    MethodVisitor scheduled =
+                            cw.visitMethod(Opcodes.ACC_PUBLIC, "runNightly", "()V", null, null);
+                    scheduled.visitAnnotation("Lcom/example/scheduling/Scheduled;", true).visitEnd();
+                    scheduled.visitCode();
+                    scheduled.visitInsn(Opcodes.RETURN);
+                    scheduled.visitMaxs(0, 0);
+                    scheduled.visitEnd();
+
+                    // Unannotated method on the same class must NOT be picked up.
+                    MethodVisitor plain = cw.visitMethod(Opcodes.ACC_PUBLIC, "helper", "()V", null, null);
+                    plain.visitCode();
+                    plain.visitInsn(Opcodes.RETURN);
+                    plain.visitMaxs(0, 0);
+                    plain.visitEnd();
+                });
+
+        assertThat(new EntryPointScanner().discover(tempDir)).isEmpty();
+
+        List<EntryPoint> found =
+                new EntryPointScanner()
+                        .discover(
+                                tempDir,
+                                new EntryPointOverrides(List.of("com.example.scheduling.Scheduled"), List.of()));
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).className()).isEqualTo("com.example.PlainScheduledTask");
+        assertThat(found.get(0).methodName()).isEqualTo("runNightly");
+    }
+
+    @Test
+    void methodMatchingBothOverrideKindsProducesOnlyOneEntryPointNotTwo() throws IOException {
+        writeClass(
+                tempDir,
+                "com/example/BelongsAndBoss",
+                cw -> {
+                    cw.visit(
+                            Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/BelongsAndBoss", null, "java/lang/Object", null);
+                    writeDefaultConstructor(cw, "java/lang/Object");
+
+                    MethodVisitor both = cw.visitMethod(Opcodes.ACC_PUBLIC, "run", "()V", null, null);
+                    both.visitAnnotation("Lcom/example/scheduling/Scheduled;", true).visitEnd();
+                    both.visitCode();
+                    both.visitInsn(Opcodes.RETURN);
+                    both.visitMaxs(0, 0);
+                    both.visitEnd();
+                });
+
+        List<EntryPoint> found =
+                new EntryPointScanner()
+                        .discover(
+                                tempDir,
+                                new EntryPointOverrides(
+                                        List.of("com.example.scheduling.Scheduled"),
+                                        List.of("com.example.BelongsAndBoss")));
+
+        assertThat(found).hasSize(1);
     }
 
     private static void writeDefaultConstructor(ClassWriter cw, String superInternalName) {

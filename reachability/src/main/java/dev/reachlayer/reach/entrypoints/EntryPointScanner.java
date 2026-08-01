@@ -1,5 +1,6 @@
 package dev.reachlayer.reach.entrypoints;
 
+import dev.reachlayer.core.config.EntryPointOverrides;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
@@ -52,6 +54,11 @@ import org.slf4j.LoggerFactory;
  * or more levels removed from {@code HttpServlet} will not be detected. This is a deliberately
  * conservative MVP heuristic, not a soundness guarantee (see PLAN.md §9 risk 1: prefer under- over
  * over-claiming).
+ *
+ * <p>{@link #discover(Path, EntryPointOverrides)} additionally recognizes user-configured entry
+ * points ({@code reachlayer.yml}'s {@code entryPoints} section — see {@code
+ * docs/configuration.md}) for runtime dispatch mechanisms this built-in discovery can't see on its
+ * own (message-queue listeners, scheduled tasks, custom framework dispatch).
  */
 public final class EntryPointScanner {
 
@@ -83,13 +90,18 @@ public final class EntryPointScanner {
      * class files are skipped (logged at debug level) rather than failing the whole scan.
      */
     public List<EntryPoint> discover(Path classesRoot) throws IOException {
+        return discover(classesRoot, EntryPointOverrides.defaults());
+    }
+
+    /** As {@link #discover(Path)}, additionally recognizing {@code overrides} (see the class doc). */
+    public List<EntryPoint> discover(Path classesRoot, EntryPointOverrides overrides) throws IOException {
         List<EntryPoint> found = new ArrayList<>();
         if (Files.isDirectory(classesRoot)) {
             try (Stream<Path> paths = Files.walk(classesRoot)) {
                 List<Path> classFiles = paths.filter(p -> p.toString().endsWith(".class")).toList();
                 for (Path path : classFiles) {
                     try (InputStream in = Files.newInputStream(path)) {
-                        scanClass(in, found);
+                        scanClass(in, found, overrides);
                     } catch (Exception e) {
                         log.debug("Skipping unreadable class file {}: {}", path, e.toString());
                     }
@@ -104,7 +116,7 @@ public final class EntryPointScanner {
                         continue;
                     }
                     try (InputStream in = jar.getInputStream(entry)) {
-                        scanClass(in, found);
+                        scanClass(in, found, overrides);
                     } catch (Exception e) {
                         log.debug("Skipping unreadable jar entry {}: {}", entry.getName(), e.toString());
                     }
@@ -116,22 +128,33 @@ public final class EntryPointScanner {
         return found;
     }
 
-    private void scanClass(InputStream in, List<EntryPoint> out) throws IOException {
+    private void scanClass(InputStream in, List<EntryPoint> out, EntryPointOverrides overrides) throws IOException {
         ClassReader reader = new ClassReader(in);
         reader.accept(
-                new EntryPointClassVisitor(out),
+                new EntryPointClassVisitor(out, overrides),
                 ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+    }
+
+    private static String toAnnotationDescriptor(String fullyQualifiedName) {
+        return "L" + fullyQualifiedName.replace('.', '/') + ";";
     }
 
     private static final class EntryPointClassVisitor extends ClassVisitor {
         private final List<EntryPoint> out;
+        private final Set<String> extraAnnotationDescriptors;
+        private final Set<String> extraClasses;
         private String className;
         private boolean controllerClass;
         private boolean servletSubclass;
+        private boolean overriddenEntryPointClass;
 
-        EntryPointClassVisitor(List<EntryPoint> out) {
+        EntryPointClassVisitor(List<EntryPoint> out, EntryPointOverrides overrides) {
             super(Opcodes.ASM9);
             this.out = out;
+            this.extraAnnotationDescriptors = overrides.extraAnnotations().stream()
+                    .map(EntryPointScanner::toAnnotationDescriptor)
+                    .collect(Collectors.toUnmodifiableSet());
+            this.extraClasses = Set.copyOf(overrides.extraClasses());
         }
 
         @Override
@@ -139,6 +162,7 @@ public final class EntryPointScanner {
                 int version, int access, String name, String signature, String superName, String[] interfaces) {
             this.className = name.replace('/', '.');
             this.servletSubclass = superName != null && SERVLET_SUPERCLASSES.contains(superName);
+            this.overriddenEntryPointClass = extraClasses.contains(this.className);
         }
 
         @Override
@@ -163,15 +187,28 @@ public final class EntryPointScanner {
             if (servletSubclass && SERVLET_METHOD_NAMES.contains(name)) {
                 out.add(new EntryPoint(className, name, "overrides HttpServlet." + name));
             }
-            if (controllerClass) {
+
+            boolean isConstructorOrStaticInit = "<init>".equals(name) || "<clinit>".equals(name);
+            boolean matchedExtraClass =
+                    overriddenEntryPointClass && (access & Opcodes.ACC_PUBLIC) != 0 && !isConstructorOrStaticInit;
+            if (matchedExtraClass) {
+                out.add(new EntryPoint(className, name, "configured entry-point class (reachlayer.yml entryPoints.extraClasses)"));
+            }
+
+            if (controllerClass || !extraAnnotationDescriptors.isEmpty()) {
                 String methodName = name;
+                boolean alreadyMatched = matchedExtraClass;
                 return new MethodVisitor(Opcodes.ASM9) {
                     private boolean mapped;
+                    private boolean matchedExtraAnnotation;
 
                     @Override
                     public AnnotationVisitor visitAnnotation(String annDescriptor, boolean annVisible) {
-                        if (MAPPING_ANNOTATIONS.contains(annDescriptor)) {
+                        if (controllerClass && MAPPING_ANNOTATIONS.contains(annDescriptor)) {
                             mapped = true;
+                        }
+                        if (extraAnnotationDescriptors.contains(annDescriptor)) {
+                            matchedExtraAnnotation = true;
                         }
                         return null;
                     }
@@ -180,6 +217,13 @@ public final class EntryPointScanner {
                     public void visitEnd() {
                         if (mapped) {
                             out.add(new EntryPoint(className, methodName, "Spring MVC handler method"));
+                        }
+                        if (matchedExtraAnnotation && !alreadyMatched) {
+                            out.add(
+                                    new EntryPoint(
+                                            className,
+                                            methodName,
+                                            "configured entry-point annotation (reachlayer.yml entryPoints.extraAnnotations)"));
                         }
                     }
                 };

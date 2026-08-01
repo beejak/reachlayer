@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.yaml.snakeyaml.Yaml;
 
@@ -30,7 +32,14 @@ import org.yaml.snakeyaml.Yaml;
  * output:
  *   topN: 5
  *   commentMarker: "&lt;!-- reachlayer:report --&gt;"
+ * entryPoints:
+ *   extraAnnotations:
+ *     - "com.example.scheduling.Scheduled"
+ *   extraClasses:
+ *     - "com.example.jobs.NightlyReportJob"
  * </pre>
+ *
+ * See {@code docs/configuration.md} for the full reference.
  */
 public final class ConfigLoader {
 
@@ -83,7 +92,11 @@ public final class ConfigLoader {
                 intOr(outputMap, "topN", defaultOutput.topN()),
                 stringOr(outputMap, "commentMarker", defaultOutput.commentMarker()));
 
-        return new ReachlayerConfig(scoring, advisor, output);
+        Map<String, Object> entryPointsMap = section(root, "entryPoints");
+        EntryPointOverrides entryPoints = new EntryPointOverrides(
+                stringListOr(entryPointsMap, "extraAnnotations"), stringListOr(entryPointsMap, "extraClasses"));
+
+        return new ReachlayerConfig(scoring, advisor, output, entryPoints);
     }
 
     @SuppressWarnings("unchecked")
@@ -105,5 +118,20 @@ public final class ConfigLoader {
     private static String stringOr(Map<String, Object> map, String key, String fallback) {
         Object v = map.get(key);
         return v instanceof String s ? s : fallback;
+    }
+
+    /** Absent, non-list, or non-string-element entries are dropped rather than failing to parse. */
+    private static List<String> stringListOr(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        if (!(v instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (Object element : list) {
+            if (element instanceof String s) {
+                out.add(s);
+            }
+        }
+        return out;
     }
 }

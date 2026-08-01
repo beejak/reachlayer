@@ -46,4 +46,30 @@ class ConfigLoaderTest {
                 ConfigLoader.load(new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8)));
         assertThat(config).isEqualTo(ReachlayerConfig.defaults());
     }
+
+    @Test
+    void parsesEntryPointOverrides() {
+        String yaml =
+                """
+                entryPoints:
+                  extraAnnotations:
+                    - "com.example.scheduling.Scheduled"
+                    - "com.example.messaging.KafkaListener"
+                  extraClasses:
+                    - "com.example.jobs.NightlyReportJob"
+                """;
+        ReachlayerConfig config = ConfigLoader.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.entryPoints().extraAnnotations())
+                .containsExactly("com.example.scheduling.Scheduled", "com.example.messaging.KafkaListener");
+        assertThat(config.entryPoints().extraClasses()).containsExactly("com.example.jobs.NightlyReportJob");
+    }
+
+    @Test
+    void missingEntryPointsSectionFallsBackToEmptyOverrides() {
+        ReachlayerConfig config =
+                ConfigLoader.load(new ByteArrayInputStream("scoring: {}".getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.entryPoints()).isEqualTo(EntryPointOverrides.defaults());
+    }
 }

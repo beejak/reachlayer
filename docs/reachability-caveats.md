@@ -108,6 +108,19 @@ It has since been reproduced directly against a real fixture and the actual depe
 described above.
 </details>
 
+## Mitigating undiscovered entry points via configuration
+
+A related but distinct gap from the ones above: `EntryPointScanner`'s built-in discovery only
+recognizes `main`, Spring MVC handler methods, and direct `HttpServlet` subclass overrides. A
+message-queue listener, a `@Scheduled` method, or any other runtime dispatch mechanism outside
+those three is invisible to it, which can itself cause a genuinely reachable finding to be tagged
+`unreachable` — not because CHA failed to trace a call edge (the `invokedynamic` gap above), but
+because the entry point that would have seeded that call path was never discovered in the first
+place. `reachlayer.yml`'s `entryPoints` section lets an operator patch this without touching
+Reachlayer's code — see [`docs/configuration.md`](configuration.md) for the full reference. This
+does not make discovery sound, it only widens the set of *known* entry points to what an operator
+tells it about.
+
 ## Practical guidance
 
 - Treat `reachable` as meaningful signal ("we found a concrete call path").
