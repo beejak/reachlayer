@@ -79,30 +79,49 @@ class ReachabilityTaggerFixtureIT {
     }
 
     @Test
-    void chaFailsToResolveCallEdgesThroughALambdaDispatchAConfirmedFalseNegative() throws Exception {
-        // This reproduces, for real, the invokedynamic/lambda gap that docs/reachability-caveats.md
-        // previously only cited from an unverified secondary source
-        // (docs/competitive-landscape-commercial-technical.md). LambdaVulnerableComponent.unsafeMethod()
-        // genuinely IS reachable at runtime -- LambdaDispatchController.reachViaLambda() is a real
-        // Spring MVC entry point that calls it through a java.util.function.Supplier lambda -- but
-        // SootUp 1.1.2's ClassHierarchyAnalysisAlgorithm has no invokedynamic/lambda-metafactory
-        // resolution at all (confirmed by inspecting sootup.callgraph-1.1.2.jar's contents: no
-        // lambda/invokedynamic-handling classes exist in it), so the call edge from
-        // Supplier.get() to the lambda body is never added to the graph.
+    void resolvesCallEdgesThroughALambdaDispatchNowThatTheGapIsFixed() throws Exception {
+        // This is a fixed version of a previously-confirmed, reproduced bug: SootUp 1.1.2's
+        // ClassHierarchyAnalysisAlgorithm.resolveCall deliberately returns no call targets for ANY
+        // invokedynamic call site (verified by decompiling sootup.callgraph-1.1.2.jar), which used
+        // to leave LambdaVulnerableComponent.unsafeMethod() tagged UNREACHABLE even though
+        // LambdaDispatchController.reachViaLambda() -- a real Spring MVC entry point -- calls it
+        // directly through a java.util.function.Supplier lambda. CallGraphBuilder now uses
+        // LambdaAwareChaAlgorithm (see that class's Javadoc), which resolves a LambdaMetafactory
+        // -bootstrapped invokedynamic site to its real implementation method via the bootstrap
+        // MethodHandle SootUp's own bytecode frontend already parses out -- no custom bytecode
+        // parsing needed here, just overriding the one case the stock algorithm special-cases away.
         //
-        // This assertion intentionally documents the CURRENT (wrong, from a runtime-behavior
-        // standpoint) tag as a known, reproduced limitation -- not because UNREACHABLE is correct
-        // here, but so that a future SootUp upgrade or custom invokedynamic edge resolver that
-        // fixes this will make this specific test start failing, which is exactly the signal
-        // needed to know the fix worked and this comment/docs/reachability-caveats.md need updating.
+        // This test previously asserted the old, wrong (from a runtime-behavior standpoint)
+        // UNREACHABLE tag on purpose, specifically so that a fix landing would flip this
+        // assertion and force this test (and docs/reachability-caveats.md) to be updated --
+        // exactly what happened here.
         Path classesRoot = fixtureClassesRoot();
         ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
 
         Finding finding = scaFinding("dev.reachlayer.fixtures.vulnapp.LambdaVulnerableComponent");
         Finding tagged = tagger.tag(List.of(finding)).get(0);
 
-        assertThat(tagged.reachability()).isEqualTo(Reachability.UNREACHABLE);
-        assertThat(tagged.reachEvidence()).contains("no call path found");
+        assertThat(tagged.reachability()).isEqualTo(Reachability.REACHABLE);
+        assertThat(tagged.reachEvidence()).contains("call graph");
+    }
+
+    @Test
+    void nonLambdaInvokedynamicCallSitesDoNotCrashCallGraphConstruction() throws Exception {
+        // StringConcatController.concat() compiles to an invokedynamic call site bootstrapped via
+        // java.lang.invoke.StringConcatFactory (javac's default string-concatenation strategy
+        // since Java 9), not java.lang.invoke.LambdaMetafactory. LambdaAwareChaAlgorithm must not
+        // assume every invokedynamic site is a lambda -- this asserts call graph construction
+        // (which discovers and seeds from this entry point automatically, since it's a real
+        // @GetMapping handler) succeeds cleanly rather than throwing or mis-resolving.
+        Path classesRoot = fixtureClassesRoot();
+
+        ReachabilityTagger tagger = new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
+
+        // A call graph was successfully constructed at all (not degraded to UNKNOWN because
+        // construction failed) -- reusing an already-known-reachable finding as the probe.
+        Finding reachableFinding = scaFinding("dev.reachlayer.fixtures.vulnapp.ReachableVulnerableComponent");
+        Finding tagged = tagger.tag(List.of(reachableFinding)).get(0);
+        assertThat(tagged.reachability()).isEqualTo(Reachability.REACHABLE);
     }
 
     @Test
