@@ -8,7 +8,9 @@ import dev.reachlayer.evals.fixtures.ReachabilityCorpus;
 import dev.reachlayer.evals.fixtures.ReachabilityCorpus.LabeledCase;
 import dev.reachlayer.reach.ReachabilityTagger;
 import dev.reachlayer.reach.signatures.ComponentLevelSignatureSource;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -26,9 +28,9 @@ class ReachabilityAccuracyEvalTest {
                 ReachabilityCorpus.classesRoot(), List.of(new ComponentLevelSignatureSource()));
 
         List<Finding> tagged = tagger.tag(corpus.stream().map(LabeledCase::finding).toList());
+        Map<String, Finding> taggedById = taggedById(tagged);
 
-        for (int i = 0; i < corpus.size(); i++) {
-            LabeledCase labeledCase = corpus.get(i);
+        for (LabeledCase labeledCase : corpus) {
             if (labeledCase.expectedLabel() != Reachability.REACHABLE) {
                 continue;
             }
@@ -36,7 +38,7 @@ class ReachabilityAccuracyEvalTest {
             // truly reachable finding as UNREACHABLE is the dangerous direction — it could bury a
             // real vulnerability. Tagging it UNKNOWN instead would still be a miss worth noticing,
             // but it is not the safety-critical failure mode this assertion exists to catch.
-            assertThat(tagged.get(i).reachability())
+            assertThat(taggedById.get(labeledCase.finding().id()).reachability())
                     .as(
                             "finding %s is truly reachable (ground truth) and must never be tagged UNREACHABLE",
                             labeledCase.finding().id())
@@ -56,12 +58,26 @@ class ReachabilityAccuracyEvalTest {
                 ReachabilityCorpus.classesRoot(), List.of(new ComponentLevelSignatureSource()));
 
         List<Finding> tagged = tagger.tag(corpus.stream().map(LabeledCase::finding).toList());
+        Map<String, Finding> taggedById = taggedById(tagged);
 
-        for (int i = 0; i < corpus.size(); i++) {
-            LabeledCase labeledCase = corpus.get(i);
+        for (LabeledCase labeledCase : corpus) {
             if (labeledCase.expectedLabel() == Reachability.UNREACHABLE) {
-                assertThat(tagged.get(i).reachability()).isEqualTo(Reachability.UNREACHABLE);
+                assertThat(taggedById.get(labeledCase.finding().id()).reachability())
+                        .isEqualTo(Reachability.UNREACHABLE);
             }
         }
+    }
+
+    /**
+     * Matches by {@link Finding#id()} rather than list position: nothing guarantees {@code
+     * tagger.tag()} preserves input order, so index-based pairing would silently mismatch if it
+     * ever reorders or processes findings in parallel.
+     */
+    private static Map<String, Finding> taggedById(List<Finding> tagged) {
+        Map<String, Finding> byId = new LinkedHashMap<>();
+        for (Finding finding : tagged) {
+            byId.put(finding.id(), finding);
+        }
+        return byId;
     }
 }

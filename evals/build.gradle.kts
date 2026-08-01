@@ -21,8 +21,13 @@ dependencies {
 
     // Surfaces ReachabilityTagger's log.warn(...) diagnostics during eval runs/tests (otherwise
     // silently dropped by the NOP slf4j binding) — see reachability/build.gradle.kts for the same
-    // rationale.
-    testRuntimeOnly("org.slf4j:slf4j-simple:$slf4jVersion")
+    // rationale. Deliberately `runtimeOnly`, not `testRuntimeOnly`: the `runEvals` JavaExec task
+    // uses `sourceSets["main"].runtimeClasspath` (EvalRunner.main() lives in main, not test), so a
+    // test-scoped dependency here would be invisible to it and diagnostics would go silently
+    // missing during scoreboard generation specifically, even though they'd still show up in
+    // `:evals:test`. No other module depends on `:evals`, so there's no consumer whose own slf4j
+    // binding this could shadow.
+    runtimeOnly("org.slf4j:slf4j-simple:$slf4jVersion")
 }
 
 tasks.register<JavaExec>("runEvals") {

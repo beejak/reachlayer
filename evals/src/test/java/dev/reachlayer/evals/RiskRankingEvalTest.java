@@ -25,7 +25,7 @@ class RiskRankingEvalTest {
         Set<String> groundTruthTop3 = RankingScenario.groundTruthTop3Ids();
 
         List<String> baselineRanking = findings.stream()
-                .sorted(Comparator.comparingDouble(RiskRankingEvalTest::cvssOrZero).reversed())
+                .sorted(Comparator.comparingDouble(Metrics::cvssOrZero).reversed())
                 .map(Finding::id)
                 .toList();
 
@@ -48,9 +48,5 @@ class RiskRankingEvalTest {
                         reachlayerRanking,
                         baselineRanking)
                 .isGreaterThan(baselinePrecision);
-    }
-
-    private static double cvssOrZero(Finding finding) {
-        return finding.cvss() != null && finding.cvss().isKnown() ? finding.cvss().score() : 0.0;
     }
 }

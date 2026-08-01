@@ -1,5 +1,6 @@
 package dev.reachlayer.evals;
 
+import dev.reachlayer.core.model.Finding;
 import java.util.List;
 import java.util.Set;
 
@@ -78,5 +79,14 @@ public final class Metrics {
         int effectiveK = Math.min(k, rankedIds.size());
         long hits = rankedIds.stream().limit(effectiveK).filter(groundTruthTopIds::contains).count();
         return (double) hits / effectiveK;
+    }
+
+    /**
+     * {@code finding.cvss().score()} if the finding carries a known CVSS score, {@code 0.0}
+     * otherwise. Shared by {@link EvalRunner} and {@code RiskRankingEvalTest} so both rank findings
+     * with unknown CVSS identically (previously duplicated privately in each).
+     */
+    static double cvssOrZero(Finding finding) {
+        return finding.cvss() != null && finding.cvss().isKnown() ? finding.cvss().score() : 0.0;
     }
 }

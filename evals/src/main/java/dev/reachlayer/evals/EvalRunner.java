@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -70,9 +71,18 @@ public final class EvalRunner {
         List<Finding> findings = corpus.stream().map(LabeledCase::finding).toList();
         List<Finding> tagged = tagger.tag(findings);
 
+        // Match by Finding.id() rather than list position: nothing guarantees tagger.tag()
+        // preserves input order, so index-based pairing would silently mismatch if it ever
+        // reorders or processes findings in parallel.
+        Map<String, Finding> taggedById = new LinkedHashMap<>();
+        for (Finding finding : tagged) {
+            taggedById.put(finding.id(), finding);
+        }
+
         List<Metrics.LabelPair<Reachability>> pairs = new ArrayList<>();
-        for (int i = 0; i < corpus.size(); i++) {
-            pairs.add(Metrics.LabelPair.of(tagged.get(i).reachability(), corpus.get(i).expectedLabel()));
+        for (LabeledCase labeledCase : corpus) {
+            Finding taggedFinding = taggedById.get(labeledCase.finding().id());
+            pairs.add(Metrics.LabelPair.of(taggedFinding.reachability(), labeledCase.expectedLabel()));
         }
         return Metrics.confusionMatrix(pairs, Reachability.REACHABLE);
     }
@@ -82,7 +92,7 @@ public final class EvalRunner {
         Set<String> groundTruthTop3 = RankingScenario.groundTruthTop3Ids();
 
         List<String> baselineRanking = findings.stream()
-                .sorted(Comparator.comparingDouble(EvalRunner::cvssOrZero).reversed())
+                .sorted(Comparator.comparingDouble(Metrics::cvssOrZero).reversed())
                 .map(Finding::id)
                 .toList();
 
@@ -98,10 +108,6 @@ public final class EvalRunner {
         return new RankingResult(baselinePrecision, reachlayerPrecision);
     }
 
-    private static double cvssOrZero(Finding finding) {
-        return finding.cvss() != null && finding.cvss().isKnown() ? finding.cvss().score() : 0.0;
-    }
-
     /**
      * Re-runs the exact same adversarial {@link Orchestrator} wiring as {@code
      * NeverFailBuildInvariantTest} and records whether any scenario let an exception escape.
@@ -110,9 +116,17 @@ public final class EvalRunner {
         Map<String, Orchestrator> scenarios = NeverFailScenarios.scenarios();
         List<String> failures = new ArrayList<>();
         for (Map.Entry<String, Orchestrator> entry : scenarios.entrySet()) {
+            // Catches Throwable, not just RuntimeException: NeverFailBuildInvariantTest uses
+            // AssertJ's assertThatCode(...).doesNotThrowAnyException(), which intercepts any
+            // Throwable including Error subclasses (StackOverflowError, OutOfMemoryError,
+            // AssertionError). A narrower catch here would let an Error crash scoreboard
+            // generation instead of recording a FAIL entry, so this runner and the JUnit hard
+            // floor would disagree about the same run. Recording a FAIL and moving on -- never
+            // rethrowing -- is exactly the "never fail the build" principle this suite exists to
+            // verify (PLAN.md §2 principle 1 / README.md design principles).
             try {
                 entry.getValue().run(List.of(ScanSource.ofPath(Path.of("test/repo"))), "test/repo");
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
                 failures.add(entry.getKey() + " -> " + e.getClass().getSimpleName() + ": "
                         + (e.getMessage() != null ? e.getMessage() : "(no message)"));
             }

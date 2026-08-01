@@ -1,6 +1,6 @@
 # Reachlayer eval scoreboard
 
-_Generated: 2026-07-03T03:15:25.061291500Z_
+_Generated: 2026-08-01T06:19:51.316356368Z_
 
 See `docs/testing-strategy.md` for what this measures and why it's separate from unit tests.
 
