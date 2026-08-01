@@ -29,6 +29,9 @@ file for the full rationale.
 | `advisor:api`, `:providers:noop`, `:providers:anthropic` | `dev.reachlayer.advisor.*` | `LlmProvider` SPI; templated fallback (default) and an Anthropic-backed provider. |
 | `output:api`, `:github-pr`, `:sarif` | `dev.reachlayer.output.*` | `OutputRenderer` SPI; Markdown formatting; single-comment GitHub PR upsert; SARIF 2.1.0 report for GitHub code scanning (see `docs/sarif-output.md`). |
 | `cmd` | `dev.reachlayer.cli` | picocli `Main`, wires everything via `Orchestrator`, produces the fat JAR the Docker action runs. |
+| `fixtures:sample-fpr`, `:sample-bdio` | — | Small, hand-written synthetic golden-path fixtures (5 findings total) used by connector/CLI-wiring unit tests. |
+| `fixtures:vulnerable-spring-app` | `dev.reachlayer.fixtures.vulnapp` | A tiny, never-executed Spring MVC app compiled to real bytecode purely so `reachability`'s tests (and the evaluation pipeline) have a genuine call graph with known reachable/unreachable classes to analyze. |
+| `fixtures:corpus-generator` | `dev.reachlayer.fixtures.corpusgen` | Generates a larger (~100+), deterministic, varied synthetic corpus for the evaluation pipeline (see `docs/evaluation-pipeline.md`) — not used by unit tests, which stick to the small golden-path fixtures above. |
 
 ## Data flow (MVP, synchronous in CI)
 
@@ -65,3 +68,13 @@ and binds them via method references.
 
 Every stage failure (a bad connector, a broken renderer, an unreachable EPSS API) is caught and
 logged inside the `Orchestrator`/individual clients — the pipeline degrades, it does not abort.
+
+## Testing strategy
+
+Unit and connector tests use the small, hand-written `fixtures:sample-fpr`/`fixtures:sample-bdio`
+golden-path fixtures (5 findings). A separate evaluation pipeline (`docs/evaluation-pipeline.md`)
+runs the full stack against a much larger, varied synthetic corpus with real reachability analysis
+enabled, both as a fast in-process JUnit test (`cmd`'s `EvaluationCorpusIT`) and as a dedicated CI
+job producing inspectable artifacts. `docs/success-criteria.md` defines concrete, falsifiable
+success/failure criteria for the repo and its test suite, including honestly-stated gaps.
+`docs/architecture-optimization.md` is a separate network-design/optimization review.
