@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.yaml.snakeyaml.Yaml;
@@ -37,6 +38,9 @@ import org.yaml.snakeyaml.Yaml;
  *     - "com.example.scheduling.Scheduled"
  *   extraClasses:
  *     - "com.example.jobs.NightlyReportJob"
+ * suppression:
+ *   displayCwes:
+ *     "CWE-563": "Team decision: unused-variable warnings are pure lint noise here (JIRA-1234)"
  * </pre>
  *
  * See {@code docs/configuration.md} for the full reference.
@@ -96,7 +100,10 @@ public final class ConfigLoader {
         EntryPointOverrides entryPoints = new EntryPointOverrides(
                 stringListOr(entryPointsMap, "extraAnnotations"), stringListOr(entryPointsMap, "extraClasses"));
 
-        return new ReachlayerConfig(scoring, advisor, output, entryPoints);
+        Map<String, Object> suppressionMap = section(root, "suppression");
+        SuppressionConfig suppression = new SuppressionConfig(stringMapOr(suppressionMap, "displayCwes"));
+
+        return new ReachlayerConfig(scoring, advisor, output, entryPoints, suppression);
     }
 
     @SuppressWarnings("unchecked")
@@ -130,6 +137,24 @@ public final class ConfigLoader {
         for (Object element : list) {
             if (element instanceof String s) {
                 out.add(s);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Absent, non-map, or non-string-valued entries are dropped rather than failing to parse.
+     * Preserves declaration order (relevant for {@code SuppressionConfig}'s display disclosure).
+     */
+    private static Map<String, String> stringMapOr(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        if (!(v instanceof Map<?, ?> nested)) {
+            return Map.of();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : nested.entrySet()) {
+            if (entry.getKey() instanceof String k && entry.getValue() instanceof String s) {
+                out.put(k, s);
             }
         }
         return out;

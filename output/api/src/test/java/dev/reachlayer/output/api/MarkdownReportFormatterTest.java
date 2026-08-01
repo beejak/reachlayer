@@ -2,6 +2,7 @@ package dev.reachlayer.output.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.reachlayer.core.config.SuppressionConfig;
 import dev.reachlayer.core.model.BlastRadius;
 import dev.reachlayer.core.model.Component;
 import dev.reachlayer.core.model.Cvss;
@@ -14,6 +15,7 @@ import dev.reachlayer.core.model.RankedReport;
 import dev.reachlayer.core.model.Reachability;
 import dev.reachlayer.core.model.RiskExplanation;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MarkdownReportFormatterTest {
@@ -110,6 +112,69 @@ class MarkdownReportFormatterTest {
         assertThat(afterDetails).contains("rest-1");
         assertThat(afterDetails).contains("Show all 3 findings");
         assertThat(markdown).contains("</details>");
+    }
+
+    @Test
+    void suppressedCweFindingIsHiddenFromTableButStillCountedAndDisclosed() {
+        Finding suppressed = Finding.builder()
+                .id("suppressed-1")
+                .source("fortify")
+                .kind(FindingKind.SAST)
+                .title("Unused variable warning")
+                .cwe(List.of("CWE-563"))
+                .severity("Low")
+                .riskScore(10.0)
+                .build();
+        Finding visible = Finding.builder()
+                .id("visible-1")
+                .source("fortify")
+                .kind(FindingKind.SAST)
+                .title("Real vulnerability")
+                .cwe(List.of("CWE-502"))
+                .severity("Critical")
+                .riskScore(90.0)
+                .build();
+        MarkdownReportFormatter suppressingFormatter =
+                new MarkdownReportFormatter(new SuppressionConfig(Map.of("CWE-563", "lint noise (JIRA-1234)")));
+
+        RankedReport report = RankedReport.of(List.of(suppressed, visible), "acme/widgets", 5);
+        String markdown = suppressingFormatter.format(report, MARKER);
+
+        assertThat(markdown).contains("2 findings analyzed, showing top 1");
+        assertThat(markdown).doesNotContain("Unused variable warning");
+        assertThat(markdown).contains("Real vulnerability");
+        assertThat(markdown).contains("1 finding suppressed from this display by policy");
+        assertThat(markdown).contains("CWE-563 (lint noise (JIRA-1234))");
+    }
+
+    @Test
+    void suppressionRuleForACweNoFindingHasProducesNoDisclosureLine() {
+        Finding finding = Finding.builder()
+                .id("f1")
+                .source("fortify")
+                .kind(FindingKind.SAST)
+                .title("Some finding")
+                .cwe(List.of("CWE-502"))
+                .severity("High")
+                .riskScore(50.0)
+                .build();
+        MarkdownReportFormatter formatterWithUnrelatedRule =
+                new MarkdownReportFormatter(new SuppressionConfig(Map.of("CWE-999", "irrelevant here")));
+
+        RankedReport report = RankedReport.of(List.of(finding), "acme/widgets", 5);
+        String markdown = formatterWithUnrelatedRule.format(report, MARKER);
+
+        assertThat(markdown).contains("Some finding");
+        assertThat(markdown).doesNotContain("suppressed from this display");
+    }
+
+    @Test
+    void defaultFormatterWithNoSuppressionConfigNeverEmitsADisclosureLine() {
+        RankedReport report = RankedReport.of(List.of(fullyPopulatedFinding()), "acme/widgets", 5);
+
+        String markdown = formatter.format(report, MARKER);
+
+        assertThat(markdown).doesNotContain("suppressed from this display");
     }
 
     @Test

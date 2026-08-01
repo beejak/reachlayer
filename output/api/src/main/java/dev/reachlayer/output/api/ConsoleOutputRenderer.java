@@ -38,9 +38,15 @@ public final class ConsoleOutputRenderer implements OutputRenderer {
      *     file output entirely
      */
     public ConsoleOutputRenderer(PrintStream out, Path outputFile) {
+        this(out, outputFile, new MarkdownReportFormatter());
+    }
+
+    /** As the other constructors, using a caller-supplied {@code formatter} (e.g. one configured
+     * with {@code reachlayer.yml}'s suppression rules) instead of the default. */
+    public ConsoleOutputRenderer(PrintStream out, Path outputFile, MarkdownReportFormatter formatter) {
         this.out = out == null ? System.out : out;
         this.outputFile = outputFile;
-        this.formatter = new MarkdownReportFormatter();
+        this.formatter = formatter == null ? new MarkdownReportFormatter() : formatter;
     }
 
     @Override
