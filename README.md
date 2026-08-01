@@ -187,6 +187,7 @@ list of inputs/outputs.
 | [`PLAN.md`](PLAN.md) | Full vision, design principles, phased roadmap, tech stack, scoring formula. |
 | [`docs/architecture.md`](docs/architecture.md) | Module/package table, data-flow diagram, testing strategy. |
 | [`docs/scoring.md`](docs/scoring.md) | The exact risk-scoring formula and tunable weights. |
+| [`docs/configuration.md`](docs/configuration.md) | Full `reachlayer.yml` reference: scoring weights, advisor/output settings, entry-point overrides. |
 | [`docs/connectors.md`](docs/connectors.md) | How to write a new `ScannerConnector` for another scanner. |
 | [`docs/reachability-caveats.md`](docs/reachability-caveats.md) | Honest soundness/false-negative disclosure for the reachability engine. |
 | [`docs/sarif-output.md`](docs/sarif-output.md) | The SARIF renderer, its GitHub code-scanning mapping, and the `upload-sarif` workflow step. |

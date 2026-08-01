@@ -3,6 +3,32 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Entry-point overrides: closing a roadmap item that was already half-done
+
+- **Checking what already exists before building something new saved real work.** PLAN.md's Phase
+  1 roadmap listed "config file (`reachlayer.yml`): scoring weights, entry-point overrides, LLM
+  provider, suppression-of-*display* rules" as one bullet, unchecked. Reading the actual code first
+  showed `core.config`'s `ConfigLoader`/`ReachlayerConfig`/`ScoringWeights`/`AdvisorConfig`/
+  `OutputConfig` already existed, fully wired via `--config`, and covered three of the four
+  sub-items — only entry-point overrides and suppression-of-display rules were actually missing.
+  Scoping the pass to just the missing piece (entry-point overrides) instead of re-implementing a
+  "config file" from scratch avoided duplicate work and kept the change small and reviewable.
+- **The two override kinds needed different dedup handling than expected.** A method that matches
+  both an `extraClasses` rule (its declaring class is named) and an `extraAnnotations` rule (it
+  carries a matching annotation) would naively produce two `EntryPoint` records for the same
+  method — harmless for correctness (`CallGraphBuilder` just seeds from both), but noisy and
+  confusing in `reachEvidence` text. `EntryPointClassVisitor.visitMethod` tracks whether the
+  `extraClasses` path already added the method before letting the annotation-matching path add it
+  again. `methodMatchingBothOverrideKindsProducesOnlyOneEntryPointNotTwo` exists specifically
+  because the first draft didn't have this check and produced two entries.
+- **The fixture proving this works needed a class that calls a vulnerable component but isn't
+  itself discoverable.** `NightlyReportJob` (no Spring/servlet annotation) calling
+  `EntryPointOverrideVulnerableComponent.unsafeMethod()` only demonstrates the override's value
+  because, without it, the call is genuinely invisible to `EntryPointScanner`'s built-in discovery
+  — not merely "an existing entry point whose call graph traversal is imperfect" (that's the
+  `invokedynamic` gap, a different problem this feature does not address, and
+  `docs/configuration.md` says so explicitly to avoid conflating the two).
+
 ## 2026-08-01 — A flagged research citation became a confirmed, reproduced bug
 
 - **A claim sourced from a background research agent, however carefully hedged, is still just a

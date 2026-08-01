@@ -1,5 +1,6 @@
 package dev.reachlayer.reach;
 
+import dev.reachlayer.core.config.EntryPointOverrides;
 import dev.reachlayer.core.model.Component;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.Reachability;
@@ -43,16 +44,23 @@ public final class ReachabilityTagger implements ReachabilityStage {
     private final String unavailableReason;
 
     public ReachabilityTagger(Path classesRoot, SignatureSource signatureSource) {
-        this(classesRoot, List.of(signatureSource));
+        this(classesRoot, List.of(signatureSource), EntryPointOverrides.defaults());
     }
 
     public ReachabilityTagger(Path classesRoot, List<SignatureSource> signatureSources) {
+        this(classesRoot, signatureSources, EntryPointOverrides.defaults());
+    }
+
+    /** As the other constructors, additionally recognizing {@code entryPointOverrides} — see
+     * {@code reachlayer.yml}'s {@code entryPoints} section and {@code docs/configuration.md}. */
+    public ReachabilityTagger(
+            Path classesRoot, List<SignatureSource> signatureSources, EntryPointOverrides entryPointOverrides) {
         this.signatureSources = List.copyOf(signatureSources);
 
         CallGraphResult result = null;
         String reason = null;
         try {
-            List<EntryPoint> entryPoints = new EntryPointScanner().discover(classesRoot);
+            List<EntryPoint> entryPoints = new EntryPointScanner().discover(classesRoot, entryPointOverrides);
             result = new CallGraphBuilder().build(classesRoot, entryPoints);
         } catch (Exception e) {
             reason = shortReason(e);

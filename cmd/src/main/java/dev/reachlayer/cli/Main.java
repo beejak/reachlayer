@@ -10,6 +10,7 @@ import dev.reachlayer.core.baseline.Baseline;
 import dev.reachlayer.core.baseline.BaselineDiffer;
 import dev.reachlayer.core.baseline.BaselineStore;
 import dev.reachlayer.core.config.ConfigLoader;
+import dev.reachlayer.core.config.EntryPointOverrides;
 import dev.reachlayer.core.config.ReachlayerConfig;
 import dev.reachlayer.core.metrics.MetricsWriter;
 import dev.reachlayer.core.metrics.PipelineMetrics;
@@ -148,7 +149,7 @@ public final class Main implements Callable<Integer> {
         }
 
         List<ScannerConnector> connectors = List.of(new FortifyConnector(), new BlackDuckConnector());
-        ReachabilityStage reachabilityStage = buildReachabilityStage(classes);
+        ReachabilityStage reachabilityStage = buildReachabilityStage(classes, cfg.entryPoints());
         EnrichmentStage enrichmentStage = buildEnrichmentStage(
                 new dev.reachlayer.enrich.epss.JdkHttpFetcher(),
                 new dev.reachlayer.enrich.kev.JdkHttpFetcher(),
@@ -179,10 +180,15 @@ public final class Main implements Callable<Integer> {
     }
 
     static ReachabilityStage buildReachabilityStage(String classesDir) {
+        return buildReachabilityStage(classesDir, EntryPointOverrides.defaults());
+    }
+
+    static ReachabilityStage buildReachabilityStage(String classesDir, EntryPointOverrides entryPointOverrides) {
         if (classesDir == null || classesDir.isBlank()) {
             return findings -> findings;
         }
-        return new ReachabilityTagger(Path.of(classesDir), List.of(new ComponentLevelSignatureSource()));
+        return new ReachabilityTagger(
+                Path.of(classesDir), List.of(new ComponentLevelSignatureSource()), entryPointOverrides);
     }
 
     /**

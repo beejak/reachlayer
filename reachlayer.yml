@@ -1,5 +1,6 @@
 # Example Reachlayer configuration. Every field is optional - anything omitted (or this whole
-# file being absent) falls back to the documented defaults in docs/scoring.md. See PLAN.md §8.
+# file being absent) falls back to the documented defaults. See docs/configuration.md for the
+# full reference (PLAN.md §8 for the scoring formula).
 
 scoring:
   cvssWeight: 0.5
@@ -22,3 +23,14 @@ advisor:
 output:
   topN: 5
   commentMarker: "<!-- reachlayer:report -->"
+
+# Entry points EntryPointScanner's built-in discovery can't see on its own (main, Spring MVC
+# handlers, direct HttpServlet subclass overrides) -- e.g. message-queue listeners, scheduled
+# tasks, custom framework dispatch. Leave both lists empty (the default) if not needed.
+entryPoints:
+  # Any method carrying one of these annotations, on any class, is treated as an entry point.
+  extraAnnotations: []
+  #   - "org.springframework.scheduling.annotation.Scheduled"
+  # Every public method declared directly on one of these classes is treated as an entry point.
+  extraClasses: []
+  #   - "com.example.jobs.NightlyReportJob"

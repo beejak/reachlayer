@@ -2,6 +2,7 @@ package dev.reachlayer.reach;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.reachlayer.core.config.EntryPointOverrides;
 import dev.reachlayer.core.model.Component;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.FindingKind;
@@ -102,6 +103,27 @@ class ReachabilityTaggerFixtureIT {
 
         assertThat(tagged.reachability()).isEqualTo(Reachability.UNREACHABLE);
         assertThat(tagged.reachEvidence()).contains("no call path found");
+    }
+
+    @Test
+    void configuredExtraClassesOverrideFlipsAnUnrecognizedEntryPointFromUnreachableToReachable() throws Exception {
+        Path classesRoot = fixtureClassesRoot();
+        Finding finding =
+                scaFinding("dev.reachlayer.fixtures.vulnapp.EntryPointOverrideVulnerableComponent");
+
+        ReachabilityTagger withoutOverrides =
+                new ReachabilityTagger(classesRoot, new ComponentLevelSignatureSource());
+        Finding taggedWithoutOverrides = withoutOverrides.tag(List.of(finding)).get(0);
+        assertThat(taggedWithoutOverrides.reachability()).isEqualTo(Reachability.UNREACHABLE);
+
+        ReachabilityTagger withOverrides =
+                new ReachabilityTagger(
+                        classesRoot,
+                        List.of(new ComponentLevelSignatureSource()),
+                        new EntryPointOverrides(
+                                List.of(), List.of("dev.reachlayer.fixtures.vulnapp.NightlyReportJob")));
+        Finding taggedWithOverrides = withOverrides.tag(List.of(finding)).get(0);
+        assertThat(taggedWithOverrides.reachability()).isEqualTo(Reachability.REACHABLE);
     }
 
     @Test
