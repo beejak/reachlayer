@@ -3,6 +3,35 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — A flagged research citation became a confirmed, reproduced bug
+
+- **A claim sourced from a background research agent, however carefully hedged, is still just a
+  claim until reproduced.** `docs/reachability-caveats.md` had, since the previous research pass,
+  described SootUp's `invokedynamic`/lambda call-graph gap as "not yet reproduced against a local
+  test fixture... treat as a flagged, high-priority research finding to validate." This pass built
+  the fixture: `LambdaDispatchController.reachViaLambda()`, a genuine Spring MVC entry point that
+  calls `LambdaVulnerableComponent.unsafeMethod()` through a `java.util.function.Supplier` lambda.
+  The result confirmed the claim exactly — `ReachabilityTagger` tags the class `UNREACHABLE` despite
+  it being unambiguously reachable at runtime. Cross-checking by inspecting
+  `sootup.callgraph-1.1.2.jar`'s actual contents (no lambda/invokedynamic-handling class exists in
+  it at all) confirmed *why*, not just *that*, independent of the fixture result.
+- **A test that documents a known-wrong result on purpose needs a comment explaining why it isn't
+  a bug in the test.** `ReachabilityTaggerFixtureIT#chaFailsToResolveCallEdgesThroughALambdaDispatchAConfirmedFalseNegative`
+  asserts `UNREACHABLE` — the *wrong* answer from a runtime-behavior standpoint — as a deliberate
+  regression/documentation test: if a future SootUp upgrade or custom invokedynamic edge resolver
+  ever fixes this, this exact test will start failing, which is the signal needed to know the fix
+  worked and the caveats doc needs updating. Without the comment explaining that inversion, a future
+  reader (or agent) skimming test names could easily "fix" this test by asserting `REACHABLE`,
+  silently erasing the regression-detection value.
+- **Confirming a real gap doesn't obligate fixing it in the same pass — but it does obligate being
+  honest about the size of the fix.** The actual fix (upgrade SootUp on the chance a newer version
+  resolves this, or write a custom invokedynamic/lambda-metafactory edge resolver) is a genuine
+  reachability-engine change, not a small patch, and attempting it opportunistically in the same
+  pass that confirmed the gap would have risked a rushed, undertested change to the one component
+  this project can least afford to get subtly wrong. Documenting the confirmed gap rigorously and
+  scoping the fix as explicit future work was the right call here, same as the vendor-reachability
+  entry below chose "build the mechanism" over "implement the unverifiable real integration."
+
 ## 2026-08-01 — Surfacing a vendor signal without ever letting it silently win
 
 - **A flagged research finding ("we might be discarding a vendor-supplied reachability field")
