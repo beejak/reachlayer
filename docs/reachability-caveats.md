@@ -44,6 +44,46 @@ a **false negative**.
    would, which biases it toward reporting things as reachable rather than missing them. This
    partially offsets (but does not eliminate) the false-negative risk above.
 
+## The other direction: CHA can also over-claim `reachable`
+
+Everything above is about false negatives (`unreachable` when it's actually reachable). The
+opposite failure mode also matters and, prior to this note, wasn't documented here: **CHA is a
+coarse, over-approximating algorithm, so it can also tag something `reachable` when the specific
+conditions needed to actually trigger it are not met at runtime** — e.g. a vulnerable method is on
+*a* call path from an entry point, but only under a configuration flag, request parameter, or
+branch condition CHA has no way to model (CHA reasons about "is there any static call edge," never
+about "under what runtime conditions"). Semgrep's public critique of call-graph-only ("transitive")
+reachability — [see their engineering blog](https://semgrep.dev/blog/2024/overrated-and-underperforming-transitive-reachability-analysis/),
+surfaced via `docs/competitive-landscape-oss.md` — argues this makes CHA-only tools over-claim
+"reachable" more often than dataflow/taint-based tools do.
+
+For Reachlayer specifically this is **lower-stakes than it would be for a suppressive tool**,
+because `reachable` only affects ranking/grouping (principle 3, above) and never hides or removes a
+finding — an over-claimed `reachable` finding is mis-ranked, not hidden. But mis-ranking is still a
+real cost to the product's core value proposition (prioritization), so treat a surprising
+`reachable` tag with the same skepticism as a surprising `unreachable` one: it means "a call path
+exists," not "this is definitely exploitable right now." Phase 2's planned taint/data-flow mode
+(PLAN.md §5) is the intended fix; no code change has been made for this yet.
+
+## A specific, researched gap: `invokedynamic`/lambda call sites
+
+A background research pass into the current (2026) state of the art for JVM call-graph
+construction (see `docs/competitive-landscape-commercial-technical.md` Part 2 — not independently
+re-verified against SootUp's source by hand, but cites a specific, checkable source) reports that
+SootUp's CHA/RTA implementation truncates the call graph at `invokedynamic` call sites (treating
+them as a dummy sink) rather than resolving the lambda/method-reference bootstrap target, unlike
+WALA which does resolve them. If accurate, this means **a Spring entry point that dispatches
+through a lambda, method reference, or functional-interface bean can be silently tagged
+`unreachable` when it is in fact reachable** — a concrete instance of the false-negative risk this
+document already describes in general terms above, but specifically triggered by a coding style
+(functional/lambda-heavy handlers) that is extremely common in modern Spring code, not an obscure
+edge case.
+
+This has not yet been reproduced against a local test fixture or fixed in `ReachabilityTagger` —
+treat it as a flagged, high-priority research finding to validate and address (see `PLAN.md`
+Phase 1/2), not yet a confirmed-and-patched bug. If you hit an `unreachable` tag on code you know
+dispatches through a lambda or method reference, this is the first thing to suspect.
+
 ## Practical guidance
 
 - Treat `reachable` as meaningful signal ("we found a concrete call path").

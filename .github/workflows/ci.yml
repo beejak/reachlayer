@@ -49,3 +49,60 @@ jobs:
         with:
           sarif_file: reachlayer-dogfood.sarif
           category: reachlayer-self-dogfood
+
+  # The evaluation pipeline (see docs/evaluation-pipeline.md): generates a larger, varied synthetic
+  # corpus (fixtures:corpus-generator) referencing fixtures:vulnerable-spring-app's real compiled
+  # classes, runs the full CLI against it with real reachability analysis enabled, and uploads the
+  # rendered report/SARIF/baseline/metrics as inspectable artifacts. Unlike sarif-dogfood (which
+  # exercises the small, curated 5-finding fixture and uploads to this repo's own Security tab),
+  # this corpus is ~100 findings and deliberately NOT uploaded to code scanning -- it's bulk
+  # synthetic data, and uploading it would just add noise to the real Security tab for no benefit.
+  evaluation:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Build the CLI fat jar and the fixture app's real bytecode
+        run: ./gradlew :cmd:shadowJar :fixtures:vulnerable-spring-app:compileJava --no-daemon
+      - name: Generate the larger synthetic evaluation corpus
+        # Gradle's `run` task (application plugin) uses the subproject's own directory as its
+        # working directory, not the repo root -- an absolute path keeps this step's output
+        # findable regardless of which directory the corpus-generator process actually runs in.
+        run: ./gradlew :fixtures:corpus-generator:run --args="$GITHUB_WORKSPACE/build/evaluation-corpus 42 40 60" --no-daemon
+      - name: Run the full pipeline against it, with real reachability analysis enabled
+        run: |
+          java -jar cmd/build/libs/cmd-all.jar \
+            --fortify "$GITHUB_WORKSPACE/build/evaluation-corpus/audit.fvdl" \
+            --blackduck "$GITHUB_WORKSPACE/build/evaluation-corpus/scan.json" \
+            --repo . \
+            --classes fixtures/vulnerable-spring-app/build/classes/java/main \
+            --out "$GITHUB_WORKSPACE/build/evaluation-corpus/report.md" \
+            --sarif-out "$GITHUB_WORKSPACE/build/evaluation-corpus/report.sarif" \
+            --baseline-out "$GITHUB_WORKSPACE/build/evaluation-corpus/baseline.json" \
+            --metrics-out "$GITHUB_WORKSPACE/build/evaluation-corpus/metrics.json" \
+            --post-pr-comment=false
+      - name: Print the pipeline metrics summary
+        run: cat "$GITHUB_WORKSPACE/build/evaluation-corpus/metrics.json"
+      - name: Sanity-check genuine reachability signal was produced (not just UNKNOWN)
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, sys
+          metrics = json.load(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "build/evaluation-corpus/metrics.json")))
+          by_reach = metrics["findingCountsByReachability"]
+          print("Reachability distribution:", by_reach)
+          if by_reach.get("reachable", 0) < 1 or by_reach.get("unreachable", 0) < 1:
+              print("FAIL: expected at least 1 reachable and 1 unreachable finding from the "
+                    "fixture-class anchors -- reachability analysis may not be running correctly.")
+              sys.exit(1)
+          print("OK: genuine REACHABLE/UNREACHABLE signal confirmed.")
+          PYEOF
+      - name: Upload evaluation artifacts for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-corpus-results
+          path: build/evaluation-corpus/
+          retention-days: 14

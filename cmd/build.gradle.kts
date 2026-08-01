@@ -27,6 +27,12 @@ dependencies {
 
     implementation("info.picocli:picocli:$picocliVersion")
     runtimeOnly("org.slf4j:slf4j-simple:$slf4jVersion")
+
+    // Evaluation pipeline (see docs/evaluation-pipeline.md): a larger synthetic corpus, plus real
+    // compiled bytecode with known reachable/unreachable classes, to exercise the full pipeline
+    // end-to-end at more-than-trivial scale with genuine (not just UNKNOWN) reachability signal.
+    testImplementation(project(":fixtures:corpus-generator"))
+    testImplementation(project(":fixtures:vulnerable-spring-app"))
 }
 
 application {

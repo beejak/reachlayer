@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Composes the three independent {@code enrich} clients ({@link EpssClient}, {@link KevClient},
@@ -20,7 +21,11 @@ import java.util.Objects;
  *
  * <p>EPSS lookups are batched: every distinct primary CVE across the whole input list is looked
  * up in a single {@link EpssClient#lookup(List)} call, rather than one HTTP round trip per
- * finding.
+ * finding. KEV membership is likewise looked up once via {@link KevClient#knownExploitedCves()}
+ * and checked in-memory per finding, rather than calling {@link KevClient#isKnownExploited(String)}
+ * per finding — that method re-reads and re-parses the on-disk KEV cache file on every call, which
+ * previously meant one redundant disk read + JSON parse per finding (see
+ * docs/architecture-optimization.md §3.2).
  */
 public final class EnrichmentPipeline implements EnrichmentStage {
 
@@ -42,12 +47,13 @@ public final class EnrichmentPipeline implements EnrichmentStage {
                 .distinct()
                 .toList();
         Map<String, Epss> epssByCve = epssClient.lookup(cveIds);
+        Set<String> knownExploitedCves = kevClient.knownExploitedCves();
 
         List<Finding> result = new ArrayList<>(findings.size());
         for (Finding finding : findings) {
             String cve = primaryCve(finding);
             Epss epss = cve == null ? null : epssByCve.get(cve);
-            boolean kev = kevClient.isKnownExploited(cve);
+            boolean kev = cve != null && knownExploitedCves.contains(cve);
             BlastRadius blastRadius = blastRadiusAnalyzer.analyze(finding);
             result.add(finding.toBuilder().epss(epss).kev(kev).blastRadius(blastRadius).build());
         }

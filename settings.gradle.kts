@@ -18,6 +18,7 @@ include(
     "output:sarif",
     "cmd",
     "fixtures:vulnerable-spring-app",
+    "fixtures:corpus-generator",
 )
 
 dependencyResolutionManagement {

@@ -56,6 +56,25 @@ output; see PLAN.md §9 risk 6 on vendor data licensing).
 Fixtures: `fixtures/sample-bdio/scan.json` (synthetic, hand-written — **not** a real Black Duck
 export).
 
+### Flagged research finding: Black Duck Detect already emits its own reachability verdict
+
+A background competitive-research pass (`docs/competitive-landscape-oss.md`) surfaced that Black
+Duck's own scanner, Detect, ships a native call-graph-based reachability feature for Java —
+"Vulnerability Impact Analysis" (`--detect.impact.analysis.enabled`) — that tags components as
+reachable/unreachable in the Detect output itself. If that field is present in a real,
+customer-run Black Duck export, this connector currently ignores it entirely: `BlackDuckConnector`
+only reads `name`/`version`/`ecosystem`/the vulnerability list per component, with no field for a
+vendor-supplied reachability verdict.
+
+This has **not been independently verified against a real Black Duck export** (per this project's
+own no-real-vendor-data rule — see `CONTRIBUTING.md`) — treat it as a flagged, high-priority item
+to validate, not a confirmed gap. If confirmed, the implication is direct: Reachlayer's own
+CHA-based `ReachabilityTagger` result and Black Duck's native verdict could disagree, and silently
+preferring one over the other (or ignoring one) would undercut the "layer, never replace" principle
+(PLAN.md §2) just as much as re-bucketing a scanner's severity would. The right fix, if this is
+confirmed, is almost certainly to parse and surface Black Duck's verdict as a second, clearly
+labeled signal alongside Reachlayer's own tag — not to replace either with the other.
+
 ## Writing a new connector
 
 1. Implement `ScannerConnector` in a new module (`connectors:<name>`), depending on `core` (and
