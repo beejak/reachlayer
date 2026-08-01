@@ -12,6 +12,7 @@ import dev.reachlayer.core.baseline.BaselineStore;
 import dev.reachlayer.core.config.ConfigLoader;
 import dev.reachlayer.core.config.EntryPointOverrides;
 import dev.reachlayer.core.config.ReachlayerConfig;
+import dev.reachlayer.core.config.SuppressionConfig;
 import dev.reachlayer.core.metrics.MetricsWriter;
 import dev.reachlayer.core.metrics.PipelineMetrics;
 import dev.reachlayer.core.model.Finding;
@@ -30,6 +31,7 @@ import dev.reachlayer.enrich.blastradius.BlastRadiusAnalyzer;
 import dev.reachlayer.enrich.epss.EpssClient;
 import dev.reachlayer.enrich.kev.KevClient;
 import dev.reachlayer.output.api.ConsoleOutputRenderer;
+import dev.reachlayer.output.api.MarkdownReportFormatter;
 import dev.reachlayer.output.githubpr.GitHubPrCommentRenderer;
 import dev.reachlayer.output.githubpr.GitHubRestApiClient;
 import dev.reachlayer.output.sarif.SarifOutputRenderer;
@@ -160,7 +162,8 @@ public final class Main implements Callable<Integer> {
         List<OutputRenderer> outputRenderers = buildOutputRenderers(
                 out.isBlank() ? null : Path.of(out),
                 postPrComment,
-                sarifOut.isBlank() ? null : Path.of(sarifOut));
+                sarifOut.isBlank() ? null : Path.of(sarifOut),
+                cfg.suppression());
 
         BaselineStage baselineStage = buildBaselineStage(baselineIn);
         String repoLabel = firstNonBlank(System.getenv("GITHUB_REPOSITORY"), repo);
@@ -253,14 +256,21 @@ public final class Main implements Callable<Integer> {
     }
 
     static List<OutputRenderer> buildOutputRenderers(Path outFile, boolean attemptPrComment, Path sarifOutFile) {
+        return buildOutputRenderers(outFile, attemptPrComment, sarifOutFile, SuppressionConfig.defaults());
+    }
+
+    static List<OutputRenderer> buildOutputRenderers(
+            Path outFile, boolean attemptPrComment, Path sarifOutFile, SuppressionConfig suppression) {
+        MarkdownReportFormatter formatter = new MarkdownReportFormatter(suppression);
         List<OutputRenderer> renderers = new ArrayList<>();
-        renderers.add(new ConsoleOutputRenderer(System.out, outFile));
+        renderers.add(new ConsoleOutputRenderer(System.out, outFile, formatter));
         if (sarifOutFile != null) {
             renderers.add(new SarifOutputRenderer(sarifOutFile));
         }
         if (attemptPrComment) {
             try {
-                renderers.add(GitHubPrCommentRenderer.fromEnvironment(GitHubRestApiClient.fromEnvironment()));
+                renderers.add(
+                        GitHubPrCommentRenderer.fromEnvironment(GitHubRestApiClient.fromEnvironment(), formatter));
             } catch (IllegalStateException e) {
                 log.info("Skipping GitHub PR comment rendering: {}", e.getMessage());
             }

@@ -72,4 +72,41 @@ class ConfigLoaderTest {
 
         assertThat(config.entryPoints()).isEqualTo(EntryPointOverrides.defaults());
     }
+
+    @Test
+    void parsesSuppressionDisplayCwes() {
+        String yaml =
+                """
+                suppression:
+                  displayCwes:
+                    "CWE-563": "Team decision: unused-variable warnings are pure lint noise here (JIRA-1234)"
+                    "CWE-1004": "Not actionable in this codebase"
+                """;
+        ReachlayerConfig config = ConfigLoader.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.suppression().displayCwes())
+                .containsEntry("CWE-563", "Team decision: unused-variable warnings are pure lint noise here (JIRA-1234)")
+                .containsEntry("CWE-1004", "Not actionable in this codebase");
+    }
+
+    @Test
+    void missingSuppressionSectionFallsBackToEmptyRules() {
+        ReachlayerConfig config =
+                ConfigLoader.load(new ByteArrayInputStream("scoring: {}".getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.suppression()).isEqualTo(SuppressionConfig.defaults());
+    }
+
+    @Test
+    void nonStringSuppressionValuesAreDroppedRatherThanFailingToParse() {
+        String yaml =
+                """
+                suppression:
+                  displayCwes:
+                    "CWE-563": 42
+                """;
+        ReachlayerConfig config = ConfigLoader.load(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+
+        assertThat(config.suppression().displayCwes()).isEmpty();
+    }
 }

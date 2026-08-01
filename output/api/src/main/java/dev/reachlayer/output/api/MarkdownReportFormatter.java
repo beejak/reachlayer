@@ -1,9 +1,12 @@
 package dev.reachlayer.output.api;
 
+import dev.reachlayer.core.config.SuppressionConfig;
 import dev.reachlayer.core.model.Finding;
 import dev.reachlayer.core.model.RankedReport;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Pure Markdown formatting for a {@link RankedReport}. No I/O, no side effects — just string
@@ -16,6 +19,14 @@ import java.util.Locale;
  *
  * <p>Every accessor on {@link Finding} that can be {@code null} or empty is defended against here
  * — this class must never throw on any finding, however sparsely populated.
+ *
+ * <p>{@link #MarkdownReportFormatter(SuppressionConfig)} supports {@code reachlayer.yml}'s
+ * {@code suppression.displayCwes} (PLAN.md §5 Phase 1, "suppression-of-*display* rules (never
+ * suppression of data)"): findings matching a suppressed CWE are excluded from the rendered
+ * table(s) here only — {@link RankedReport} itself, the SARIF renderer, the baseline store, and
+ * pipeline metrics are completely untouched, and the summary line's total finding count always
+ * reflects every finding, with a disclosure line naming what was hidden and why. See {@code
+ * docs/configuration.md}.
  */
 public final class MarkdownReportFormatter {
 
@@ -23,6 +34,16 @@ public final class MarkdownReportFormatter {
     private static final int FIX_CELL_MAX_LEN = 150;
 
     private static final int WHY_CELL_MAX_LEN = 120;
+
+    private final SuppressionConfig suppression;
+
+    public MarkdownReportFormatter() {
+        this(SuppressionConfig.defaults());
+    }
+
+    public MarkdownReportFormatter(SuppressionConfig suppression) {
+        this.suppression = suppression == null ? SuppressionConfig.defaults() : suppression;
+    }
 
     /**
      * Formats {@code report} as Markdown, prefixed with {@code marker} on its own line.
@@ -49,21 +70,25 @@ public final class MarkdownReportFormatter {
         String repo = report.repo() == null || report.repo().isBlank() ? "(unknown repo)" : report.repo();
         sb.append("## Reachlayer risk triage — ").append(repo).append('\n').append('\n');
 
-        boolean baselineActive = report.findings().stream().anyMatch(f -> f.isNew() != null);
+        List<Finding> all = report.findings();
+        List<Finding> visible = all.stream().filter(f -> !isSuppressed(f)).toList();
+        Map<String, String> matchedSuppressions = matchedSuppressions(all);
+
+        boolean baselineActive = all.stream().anyMatch(f -> f.isNew() != null);
         if (baselineActive) {
-            appendBaselineAwareBody(sb, report);
+            appendBaselineAwareBody(sb, all, visible, report.topN(), matchedSuppressions);
         } else {
-            appendUndiffedBody(sb, report);
+            appendUndiffedBody(sb, all, visible, report.topN(), matchedSuppressions);
         }
 
         return sb.toString();
     }
 
     /** Today's rendering, unchanged: purely risk-ranked top-N/rest, no baseline awareness. */
-    private void appendUndiffedBody(StringBuilder sb, RankedReport report) {
-        List<Finding> all = report.findings();
-        List<Finding> top = report.top();
-        List<Finding> rest = report.rest();
+    private void appendUndiffedBody(
+            StringBuilder sb, List<Finding> all, List<Finding> visible, int topN, Map<String, String> matchedSuppressions) {
+        List<Finding> top = visible.size() <= topN ? visible : visible.subList(0, topN);
+        List<Finding> rest = visible.size() <= topN ? List.of() : visible.subList(topN, visible.size());
 
         sb.append(all.size())
                 .append(" finding")
@@ -73,12 +98,14 @@ public final class MarkdownReportFormatter {
                 .append('\n')
                 .append('\n');
 
+        appendSuppressionDisclosure(sb, all.size() - visible.size(), matchedSuppressions);
+
         appendTable(sb, top, 1);
 
         if (!rest.isEmpty()) {
             sb.append('\n');
             sb.append("<details>\n");
-            sb.append("<summary>Show all ").append(all.size()).append(" findings</summary>\n\n");
+            sb.append("<summary>Show all ").append(visible.size()).append(" findings</summary>\n\n");
             appendTable(sb, rest, top.size() + 1);
             sb.append('\n');
             sb.append("</details>\n");
@@ -91,23 +118,26 @@ public final class MarkdownReportFormatter {
      * listed in a second collapsible block, never further paginated (they're already the
      * deprioritized bucket by construction — see the design spec's rationale).
      */
-    private void appendBaselineAwareBody(StringBuilder sb, RankedReport report) {
-        List<Finding> all = report.findings();
-        int topN = report.topN();
-
-        List<Finding> newFindings = all.stream().filter(f -> Boolean.TRUE.equals(f.isNew())).toList();
-        List<Finding> existingFindings = all.stream().filter(f -> !Boolean.TRUE.equals(f.isNew())).toList();
+    private void appendBaselineAwareBody(
+            StringBuilder sb, List<Finding> all, List<Finding> visible, int topN, Map<String, String> matchedSuppressions) {
+        List<Finding> allNewFindings = all.stream().filter(f -> Boolean.TRUE.equals(f.isNew())).toList();
+        List<Finding> allExistingFindings = all.stream().filter(f -> !Boolean.TRUE.equals(f.isNew())).toList();
 
         sb.append(all.size())
                 .append(" finding")
                 .append(all.size() == 1 ? "" : "s")
                 .append(" analyzed against the baseline — ")
-                .append(newFindings.size())
+                .append(allNewFindings.size())
                 .append(" new, ")
-                .append(existingFindings.size())
+                .append(allExistingFindings.size())
                 .append(" pre-existing.")
                 .append('\n')
                 .append('\n');
+
+        appendSuppressionDisclosure(sb, all.size() - visible.size(), matchedSuppressions);
+
+        List<Finding> newFindings = visible.stream().filter(f -> Boolean.TRUE.equals(f.isNew())).toList();
+        List<Finding> existingFindings = visible.stream().filter(f -> !Boolean.TRUE.equals(f.isNew())).toList();
 
         sb.append("### New findings introduced by this change\n\n");
         if (newFindings.isEmpty()) {
@@ -142,6 +172,54 @@ public final class MarkdownReportFormatter {
             sb.append('\n');
             sb.append("</details>\n");
         }
+    }
+
+    private boolean isSuppressed(Finding f) {
+        if (suppression.displayCwes().isEmpty() || f.cwe() == null) {
+            return false;
+        }
+        return f.cwe().stream().anyMatch(suppression.displayCwes()::containsKey);
+    }
+
+    /** Only the configured CWEs that actually matched at least one finding in this run — not the
+     * whole configured list, most of which may be irrelevant to any given report. Preserves
+     * configured order. */
+    private Map<String, String> matchedSuppressions(List<Finding> all) {
+        if (suppression.displayCwes().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> matched = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : suppression.displayCwes().entrySet()) {
+            boolean anyMatch = all.stream().anyMatch(f -> f.cwe() != null && f.cwe().contains(entry.getKey()));
+            if (anyMatch) {
+                matched.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return matched;
+    }
+
+    /** Never silent: per PLAN.md §2 principle 3, a suppressed-from-display finding is still fully
+     * counted elsewhere (the summary line's total, SARIF, metrics, baseline) — this line is what
+     * discloses that a display-only suppression happened here and why, rather than the count
+     * simply not adding up with no explanation. No-op when nothing was suppressed. */
+    private void appendSuppressionDisclosure(StringBuilder sb, int suppressedCount, Map<String, String> matchedSuppressions) {
+        if (suppressedCount <= 0) {
+            return;
+        }
+        sb.append("> ")
+                .append(suppressedCount)
+                .append(" finding")
+                .append(suppressedCount == 1 ? "" : "s")
+                .append(" suppressed from this display by policy (still counted above and in the full SARIF/metrics output): ");
+        boolean first = true;
+        for (Map.Entry<String, String> entry : matchedSuppressions.entrySet()) {
+            if (!first) {
+                sb.append("; ");
+            }
+            sb.append(entry.getKey()).append(" (").append(sanitizeCell(entry.getValue())).append(")");
+            first = false;
+        }
+        sb.append('\n').append('\n');
     }
 
     private void appendTable(StringBuilder sb, List<Finding> findings, int rankStart) {

@@ -3,6 +3,33 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — Suppression-of-display rules: the last piece of the config-file bullet
+
+- **"Never suppress a finding" and "let a team hide known noise" are not actually in tension, but
+  it took a specific split to prove it.** The naive implementation would filter
+  `RankedReport.findings()` itself — wrong, because every other renderer (SARIF, baseline store,
+  metrics) reads that same list, and PLAN.md §2 principle 3 is unconditional. The fix was scoping
+  the whole feature to `MarkdownReportFormatter` alone: it computes its own filtered "visible"
+  list internally for table-building, while the summary line's total count, the `RankedReport`
+  passed to every other renderer, and pipeline metrics all keep seeing every finding. "Suppress
+  from display" and "suppress data" turned out to require genuinely different code paths, not
+  just a flag — the data path (`RankedReport`) was never touched at all.
+- **A required (not optional) reason field is a design decision, not a formality.**
+  `SuppressionConfig.displayCwes` is `Map<String, String>` — CWE to reason — specifically so a
+  suppression rule can never exist without a stated justification next to it in `reachlayer.yml`.
+  This mirrors this project's broader "explainable, not just correct" ethos (the same reason
+  `RiskExplanation` exists for scoring, `reachEvidence` exists for reachability tags) — a
+  suppression rule that just said `displayCwes: ["CWE-563"]` with no reason would technically work
+  but would rot into "nobody remembers why we hid this" within a year.
+- **Recomputing top/rest after filtering, not filtering `report.top()`/`report.rest()`, was the
+  detail that made the feature actually correct.** `RankedReport.top()`/`.rest()` are precomputed
+  slices at the configured `topN` boundary *before* any suppression is known. Filtering those
+  slices directly would leave gaps — if the #2-ranked finding is suppressed, the #6-ranked one
+  should visibly move up into the top-N table, not leave the visible table one row short. The
+  formatter instead filters `report.findings()` first, then reapplies `topN` itself to the
+  filtered list — this is why `appendUndiffedBody`/`appendBaselineAwareBody` had to take the raw
+  finding lists and `topN` as parameters instead of the whole `RankedReport`.
+
 ## 2026-08-01 — Entry-point overrides: closing a roadmap item that was already half-done
 
 - **Checking what already exists before building something new saved real work.** PLAN.md's Phase

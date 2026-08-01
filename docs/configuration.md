@@ -61,3 +61,42 @@ operator doesn't tell it about), and it is not a substitute for the invokedynami
 tracked in `docs/reachability-caveats.md` (a lambda-dispatched call from an already-discovered
 entry point is a different problem than an *undiscovered* entry point, and this feature only
 addresses the latter).
+
+## `suppression`
+
+Display-only noise reduction — PLAN.md §2 principle 3 ("never suppress a finding") still applies
+in full. This section can only ever affect what `MarkdownReportFormatter` puts in its rendered
+table; it never removes a finding from the underlying `RankedReport`, never affects the SARIF
+renderer, the baseline store, or pipeline metrics. Every finding Fortify/Black Duck reported is
+still counted in the summary line's total, still in the SARIF output, still in `--metrics-out`
+— a suppressed-from-display finding is hidden from one table, not deleted from the run.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `displayCwes` | `{}` | Map of CWE id (e.g. `"CWE-563"`) to a **required** human-readable reason. Any finding carrying that CWE is excluded from the rendered Markdown table(s). |
+
+Example:
+
+```yaml
+suppression:
+  displayCwes:
+    "CWE-563": "Team decision: unused-variable warnings are pure lint noise here (JIRA-1234)"
+```
+
+The reason is required, not optional, so a suppression rule is always self-documenting — a future
+reader of `reachlayer.yml` (or the PR comment itself) can always see *why* a CWE was hidden, not
+just that it was. When a suppression rule actually hides at least one finding in a given run, the
+rendered report includes a disclosure line naming how many findings were hidden and why, e.g.:
+
+> 1 finding suppressed from this display by policy (still counted above and in the full
+> SARIF/metrics output): CWE-563 (Team decision: unused-variable warnings are pure lint noise
+> here (JIRA-1234))
+
+A `displayCwes` entry for a CWE that doesn't appear in a given run's findings produces no
+disclosure line at all — only CWEs that actually mattered for that specific report are mentioned,
+not the whole configured list.
+
+**What this does not do:** it is not a merge-gate mechanism (PLAN.md §2 principle 1 — Reachlayer
+never fails or blocks a build regardless of what's configured here), and it does not change
+severity, CVSS, or risk score — a suppressed-from-display finding still contributes its real score
+to every other output surface exactly as if this section didn't exist.

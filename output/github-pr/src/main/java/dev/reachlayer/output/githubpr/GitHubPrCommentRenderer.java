@@ -55,10 +55,17 @@ public final class GitHubPrCommentRenderer implements OutputRenderer {
      *     unparseable
      */
     public static GitHubPrCommentRenderer fromEnvironment(GitHubApiClient client) {
+        return fromEnvironment(client, new MarkdownReportFormatter());
+    }
+
+    /** As {@link #fromEnvironment(GitHubApiClient)}, using a caller-supplied {@code formatter}
+     * (e.g. one configured with {@code reachlayer.yml}'s suppression rules) instead of the
+     * default. */
+    public static GitHubPrCommentRenderer fromEnvironment(GitHubApiClient client, MarkdownReportFormatter formatter) {
         String[] ownerRepo = parseOwnerRepo(System.getenv("GITHUB_REPOSITORY"));
         int prNumber = parsePrNumber(System.getenv("GITHUB_PR_NUMBER"));
         return new GitHubPrCommentRenderer(
-                client, ownerRepo[0], ownerRepo[1], prNumber, OutputConfig.defaults().commentMarker());
+                client, ownerRepo[0], ownerRepo[1], prNumber, OutputConfig.defaults().commentMarker(), formatter);
     }
 
     /**

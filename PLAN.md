@@ -162,13 +162,14 @@ Java/Spring, GitHub Actions, Fortify + Black Duck (offline exports), call-graph 
   `Finding#isNew()`, wired via `cmd`'s `--baseline-in`/`--baseline-out` flags and `action.yml`'s
   matching inputs. See `docs/baseline-mode.md`.
 - **Incremental call-graph construction** (IncCHA-style graph patching) for CI speed on large codebases.
-- **Config file (`reachlayer.yml`)** — implemented: `core.config`'s `ConfigLoader`/`ReachlayerConfig`,
-  wired via `cmd`'s `--config` flag. Scoring weights (`docs/scoring.md`), advisor/LLM provider
-  selection, and output settings were already covered; **entry-point overrides** (recognize
-  message-queue listeners, `@Scheduled` methods, or other runtime dispatch `EntryPointScanner`'s
-  built-in discovery can't see on its own) added — see `docs/configuration.md` and
-  `docs/reachability-caveats.md`. **Not yet implemented:** suppression-of-*display* rules (never
-  suppression of data).
+- **Config file (`reachlayer.yml`)** — fully implemented: `core.config`'s
+  `ConfigLoader`/`ReachlayerConfig`, wired via `cmd`'s `--config` flag. Scoring weights
+  (`docs/scoring.md`), advisor/LLM provider selection, output settings, **entry-point overrides**
+  (recognize message-queue listeners, `@Scheduled` methods, or other runtime dispatch
+  `EntryPointScanner`'s built-in discovery can't see on its own), and **suppression-of-*display*
+  rules** (`suppression.displayCwes` — hide specific CWEs from the rendered Markdown table only;
+  the underlying `RankedReport`, SARIF output, baseline store, and metrics are always complete,
+  per principle 3 below) are all implemented — see `docs/configuration.md`.
 
 ### Phase 2 — Broaden reach
 - **Additional languages:** JS/TS then Python reachability (moderate maturity; document soundness caveats loudly).

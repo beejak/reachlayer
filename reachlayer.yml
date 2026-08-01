@@ -34,3 +34,11 @@ entryPoints:
   # Every public method declared directly on one of these classes is treated as an entry point.
   extraClasses: []
   #   - "com.example.jobs.NightlyReportJob"
+
+# Display-only noise reduction (never suppression of data -- see docs/configuration.md). Every
+# finding is still counted in the summary line, the SARIF output, and --metrics-out regardless of
+# this section; it only hides matching CWEs from the rendered Markdown table(s).
+suppression:
+  # CWE id -> a required, human-readable reason. Leave empty (the default) if not needed.
+  displayCwes: {}
+  #   "CWE-563": "Team decision: unused-variable warnings are pure lint noise here (JIRA-1234)"
