@@ -69,26 +69,29 @@ jobs:
       - name: Build the CLI fat jar and the fixture app's real bytecode
         run: ./gradlew :cmd:shadowJar :fixtures:vulnerable-spring-app:compileJava --no-daemon
       - name: Generate the larger synthetic evaluation corpus
-        run: ./gradlew :fixtures:corpus-generator:run --args="build/evaluation-corpus 42 40 60" --no-daemon
+        # Gradle's `run` task (application plugin) uses the subproject's own directory as its
+        # working directory, not the repo root -- an absolute path keeps this step's output
+        # findable regardless of which directory the corpus-generator process actually runs in.
+        run: ./gradlew :fixtures:corpus-generator:run --args="$GITHUB_WORKSPACE/build/evaluation-corpus 42 40 60" --no-daemon
       - name: Run the full pipeline against it, with real reachability analysis enabled
         run: |
           java -jar cmd/build/libs/cmd-all.jar \
-            --fortify build/evaluation-corpus/audit.fvdl \
-            --blackduck build/evaluation-corpus/scan.json \
+            --fortify "$GITHUB_WORKSPACE/build/evaluation-corpus/audit.fvdl" \
+            --blackduck "$GITHUB_WORKSPACE/build/evaluation-corpus/scan.json" \
             --repo . \
             --classes fixtures/vulnerable-spring-app/build/classes/java/main \
-            --out build/evaluation-corpus/report.md \
-            --sarif-out build/evaluation-corpus/report.sarif \
-            --baseline-out build/evaluation-corpus/baseline.json \
-            --metrics-out build/evaluation-corpus/metrics.json \
+            --out "$GITHUB_WORKSPACE/build/evaluation-corpus/report.md" \
+            --sarif-out "$GITHUB_WORKSPACE/build/evaluation-corpus/report.sarif" \
+            --baseline-out "$GITHUB_WORKSPACE/build/evaluation-corpus/baseline.json" \
+            --metrics-out "$GITHUB_WORKSPACE/build/evaluation-corpus/metrics.json" \
             --post-pr-comment=false
       - name: Print the pipeline metrics summary
-        run: cat build/evaluation-corpus/metrics.json
+        run: cat "$GITHUB_WORKSPACE/build/evaluation-corpus/metrics.json"
       - name: Sanity-check genuine reachability signal was produced (not just UNKNOWN)
         run: |
           python3 - <<'PYEOF'
-          import json, sys
-          metrics = json.load(open("build/evaluation-corpus/metrics.json"))
+          import json, os, sys
+          metrics = json.load(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "build/evaluation-corpus/metrics.json")))
           by_reach = metrics["findingCountsByReachability"]
           print("Reachability distribution:", by_reach)
           if by_reach.get("reachable", 0) < 1 or by_reach.get("unreachable", 0) < 1:

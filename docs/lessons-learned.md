@@ -3,6 +3,24 @@
 Running log of concrete, falsifiable things learned while building Reachlayer — not general advice,
 only things that changed a decision or caught a real bug. Newest entries first.
 
+## 2026-08-01 — The evaluation CI job's first real run caught a bug manual testing missed
+
+- **`./gradlew :<subproject>:run --args="build/out ..."` resolves `build/out` relative to the
+  *subproject's* directory, not the repo root — a real bug that only surfaced on the evaluation
+  job's actual first CI run**, never during local manual verification (the earlier "3 reachable, 2
+  unreachable, 100 unknown, matched exactly" check ran the built jar directly, with a different
+  working directory, not through `gradlew :fixtures:corpus-generator:run`). In CI, the corpus files
+  landed under `fixtures/corpus-generator/build/evaluation-corpus/`, while the next step read from
+  `build/evaluation-corpus/` at the repo root — silently ingesting 0 findings, an empty
+  reachability distribution, and a correctly-firing sanity-check failure (not a false negative in
+  the check itself — the check did exactly its job). Fixed by using `$GITHUB_WORKSPACE`-anchored
+  absolute paths throughout the job's steps instead of paths relative to "wherever this step
+  happens to run from." Lesson: a manual, in-process verification of a pipeline and a CI job that
+  drives the same pipeline through a different invocation path (Gradle's `application` plugin `run`
+  task vs. a plain `java -jar`) are not the same test — the exact command a CI job runs needs to be
+  run for real at least once, not approximated by a locally-convenient equivalent, before trusting
+  it's wired correctly.
+
 ## 2026-08-01 — Competitive research changed the pitch, not the roadmap
 
 - **The most useful competitive-research finding was about vendors, not competitors.** Two
