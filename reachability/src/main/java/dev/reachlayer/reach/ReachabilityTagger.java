@@ -68,7 +68,8 @@ public final class ReachabilityTagger implements ReachabilityStage {
             String evidence = "reachability analysis unavailable: " + unavailableReason;
             List<Finding> out = new ArrayList<>(findings.size());
             for (Finding f : findings) {
-                out.add(f.toBuilder().reachability(Reachability.UNKNOWN).reachEvidence(evidence).build());
+                Finding tagged = f.toBuilder().reachability(Reachability.UNKNOWN).reachEvidence(evidence).build();
+                out.add(noteVendorDisagreement(tagged));
             }
             return out;
         }
@@ -81,17 +82,41 @@ public final class ReachabilityTagger implements ReachabilityStage {
     }
 
     private Finding tagOne(Finding finding) {
+        Finding tagged;
         try {
-            return finding.component() != null ? tagComponentFinding(finding) : tagSastFinding(finding);
+            tagged = finding.component() != null ? tagComponentFinding(finding) : tagSastFinding(finding);
         } catch (RuntimeException e) {
             String reason = shortReason(e);
             log.warn("Reachability tagging failed for finding {}: {}", finding.id(), reason);
-            return finding
+            tagged = finding
                     .toBuilder()
                     .reachability(Reachability.UNKNOWN)
                     .reachEvidence("reachability analysis unavailable: " + reason)
                     .build();
         }
+        return noteVendorDisagreement(tagged);
+    }
+
+    /**
+     * When the scanner's own export carried a {@link Finding#vendorReachability()} verdict (e.g.
+     * Black Duck Detect's native impact analysis — see {@code docs/connectors.md}) that differs
+     * from Reachlayer's own computed tag, appends a note to {@code reachEvidence} rather than
+     * silently ignoring or preferring one signal over the other (PLAN.md §2 principle 2). Agreement
+     * is not noted — it isn't actionable the way a difference is. A difference where Reachlayer's
+     * own tag is {@code UNKNOWN} (inconclusive, not a real claim) is worded differently from a
+     * genuine disagreement between two concrete verdicts.
+     */
+    private static Finding noteVendorDisagreement(Finding tagged) {
+        Reachability vendor = tagged.vendorReachability();
+        if (vendor == null || vendor == tagged.reachability()) {
+            return tagged;
+        }
+        String note =
+                tagged.reachability() == Reachability.UNKNOWN
+                        ? "; vendor-reported reachability (" + vendor.wireValue()
+                                + ") noted, Reachlayer's own analysis was inconclusive"
+                        : "; disagrees with vendor-reported reachability (" + vendor.wireValue() + ")";
+        return tagged.toBuilder().reachEvidence(tagged.reachEvidence() + note).build();
     }
 
     private Finding tagComponentFinding(Finding finding) {

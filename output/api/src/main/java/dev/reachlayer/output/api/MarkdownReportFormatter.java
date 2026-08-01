@@ -158,6 +158,9 @@ public final class MarkdownReportFormatter {
         String risk = f.riskScore() == null ? "n/a" : String.format(Locale.ROOT, "%.1f", f.riskScore());
         String severity = sanitizeCell(nonBlank(f.severity(), "unknown"));
         String reachability = f.reachability() == null ? "unknown" : f.reachability().wireValue();
+        if (f.vendorReachability() != null && f.vendorReachability() != f.reachability()) {
+            reachability += " (vendor: " + f.vendorReachability().wireValue() + ")";
+        }
         String cveCwe = joinCveCwe(f);
         String findingCell = buildFindingCell(f);
         String fixCell = buildFixCell(f);

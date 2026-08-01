@@ -72,6 +72,28 @@ class ReachabilityTaggerTest {
     }
 
     @Test
+    void notesVendorReachabilityAsInconclusiveRatherThanDisagreementWhenOwnAnalysisIsUnavailable() {
+        ReachabilityTagger tagger =
+                new ReachabilityTagger(Path.of("this/path/does/not/exist"), new ComponentLevelSignatureSource());
+        Finding scaFinding =
+                Finding.builder()
+                        .id("f1")
+                        .source("blackduck")
+                        .kind(FindingKind.SCA)
+                        .component(Component.of("some-lib", "1.0"))
+                        .location(Location.unknown())
+                        .vendorReachability(Reachability.REACHABLE)
+                        .build();
+
+        Finding tagged = tagger.tag(List.of(scaFinding)).get(0);
+
+        assertThat(tagged.reachability()).isEqualTo(Reachability.UNKNOWN);
+        assertThat(tagged.vendorReachability()).isEqualTo(Reachability.REACHABLE);
+        assertThat(tagged.reachEvidence())
+                .contains("vendor-reported reachability (reachable) noted, Reachlayer's own analysis was inconclusive");
+    }
+
+    @Test
     void neverMutatesInputFindings() {
         ReachabilityTagger tagger =
                 new ReachabilityTagger(Path.of("this/path/does/not/exist"), new ComponentLevelSignatureSource());
