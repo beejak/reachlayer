@@ -28,12 +28,16 @@ import java.util.List;
  */
 public final class GitHubRestApiClient implements GitHubApiClient {
 
-    private static final String API_BASE = "https://api.github.com";
+    private static final String DEFAULT_API_BASE = "https://api.github.com";
     private static final String API_VERSION = "2022-11-28";
     private static final int MAX_ERROR_BODY_LEN = 500;
 
+    /** GitHub's own default/max page size for the "list issue comments" endpoint. */
+    private static final int COMMENTS_PAGE_SIZE = 100;
+
     private final String token;
     private final HttpClient httpClient;
+    private final String apiBase;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public GitHubRestApiClient(String token) {
@@ -41,11 +45,17 @@ public final class GitHubRestApiClient implements GitHubApiClient {
     }
 
     public GitHubRestApiClient(String token, HttpClient httpClient) {
+        this(token, httpClient, DEFAULT_API_BASE);
+    }
+
+    /** Package-visible so tests can point this client at a local test server instead of the real GitHub API. */
+    GitHubRestApiClient(String token, HttpClient httpClient, String apiBase) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("GitHub token must not be blank");
         }
         this.token = token;
         this.httpClient = httpClient;
+        this.apiBase = apiBase;
     }
 
     /**
@@ -61,30 +71,55 @@ public final class GitHubRestApiClient implements GitHubApiClient {
         return new GitHubRestApiClient(token);
     }
 
+    /**
+     * Fetches every comment on the issue/PR, following pagination to completion. GitHub's default
+     * page size for this endpoint is 30, and this client previously requested one unparameterized
+     * page -- a marker comment past the first page was invisible to {@code
+     * GitHubPrCommentRenderer}, which would then post a duplicate comment instead of upserting
+     * (see docs/architecture-optimization.md §3.7(a)). Requesting the max page size (100) and
+     * following {@code page=N} until a short page is returned closes that gap.
+     */
     @Override
     public List<ExistingComment> listIssueComments(String owner, String repo, int prNumber) throws IOException {
-        URI uri = URI.create(API_BASE + "/repos/" + owner + "/" + repo + "/issues/" + prNumber + "/comments");
-        HttpRequest request = requestBuilder(uri).GET().build();
-        HttpResponse<String> response = send(request);
-        requireSuccess(request.method(), uri, response);
+        List<ExistingComment> result = new ArrayList<>();
+        int page = 1;
+        while (true) {
+            URI uri = URI.create(apiBase
+                    + "/repos/"
+                    + owner
+                    + "/"
+                    + repo
+                    + "/issues/"
+                    + prNumber
+                    + "/comments?per_page="
+                    + COMMENTS_PAGE_SIZE
+                    + "&page="
+                    + page);
+            HttpRequest request = requestBuilder(uri).GET().build();
+            HttpResponse<String> response = send(request);
+            requireSuccess(request.method(), uri, response);
 
-        GhComment[] comments;
-        try {
-            comments = objectMapper.readValue(response.body(), GhComment[].class);
-        } catch (IOException e) {
-            throw new IOException("Malformed GitHub comments response for " + uri + ": " + e.getMessage(), e);
-        }
+            GhComment[] comments;
+            try {
+                comments = objectMapper.readValue(response.body(), GhComment[].class);
+            } catch (IOException e) {
+                throw new IOException("Malformed GitHub comments response for " + uri + ": " + e.getMessage(), e);
+            }
 
-        List<ExistingComment> result = new ArrayList<>(comments.length);
-        for (GhComment c : comments) {
-            result.add(new ExistingComment(c.id(), c.body() == null ? "" : c.body()));
+            for (GhComment c : comments) {
+                result.add(new ExistingComment(c.id(), c.body() == null ? "" : c.body()));
+            }
+            if (comments.length < COMMENTS_PAGE_SIZE) {
+                break;
+            }
+            page++;
         }
         return result;
     }
 
     @Override
     public void updateComment(String owner, String repo, long commentId, String body) throws IOException {
-        URI uri = URI.create(API_BASE + "/repos/" + owner + "/" + repo + "/issues/comments/" + commentId);
+        URI uri = URI.create(apiBase + "/repos/" + owner + "/" + repo + "/issues/comments/" + commentId);
         String json = toJsonBody(body);
         HttpRequest request = requestBuilder(uri)
                 .method("PATCH", BodyPublishers.ofString(json, StandardCharsets.UTF_8))
@@ -95,7 +130,7 @@ public final class GitHubRestApiClient implements GitHubApiClient {
 
     @Override
     public void createComment(String owner, String repo, int prNumber, String body) throws IOException {
-        URI uri = URI.create(API_BASE + "/repos/" + owner + "/" + repo + "/issues/" + prNumber + "/comments");
+        URI uri = URI.create(apiBase + "/repos/" + owner + "/" + repo + "/issues/" + prNumber + "/comments");
         String json = toJsonBody(body);
         HttpRequest request = requestBuilder(uri)
                 .POST(BodyPublishers.ofString(json, StandardCharsets.UTF_8))
